@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Tailwind 4 CSS-first config — define theme tokens here if needed */
+@theme {
+  /* Example:
+  --color-klymo-primary: oklch(0.7 0.18 250);
+  */
+}

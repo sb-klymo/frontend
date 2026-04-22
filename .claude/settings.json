@@ -1,0 +1,63 @@
+{
+  "model": "claude-opus-4-7",
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/block-real-keys.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "stripe": {
+      "url": "https://mcp.stripe.com",
+      "auth": "oauth"
+    },
+    "supabase": {
+      "url": "https://mcp.supabase.com",
+      "auth": "oauth"
+    },
+    "nextjs-devtools": {
+      "command": "npx",
+      "args": ["-y", "next-devtools-mcp"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "github": {
+      "url": "https://mcp.github.com",
+      "auth": "oauth"
+    }
+  }
+}
