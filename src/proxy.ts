@@ -1,8 +1,9 @@
 /**
- * Next.js middleware — refreshes the Supabase session on every request.
+ * Next.js 16 proxy (formerly "middleware") — refreshes the Supabase session
+ * on every request.
  *
  * Without this, Supabase auth tokens expire silently (~1h) and server
- * components would see stale sessions. The middleware reads cookies, calls
+ * components would see stale sessions. Reads cookies, calls
  * `supabase.auth.getUser()` to validate/refresh them, and writes the updated
  * tokens back to the response.
  *
@@ -12,7 +13,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
