@@ -21,6 +21,10 @@ import {
   type DevPromptCategory,
 } from "@/lib/dev-prompts";
 import type { SupportedLanguage } from "@/lib/i18n";
+import {
+  POLICY_PRESETS,
+  type PolicyPresetId,
+} from "@/lib/policy-presets";
 
 export type DevPanelProps = {
   send: (text: string) => void | Promise<void>;
@@ -32,6 +36,11 @@ export type DevPanelProps = {
   conversationId: string | null;
   messageCount: number;
   error: string | null;
+  // Policy preset selector — drives the dev_policy_override forwarded
+  // to /chat. The active preset's `config` is read by ChatRoot at send
+  // time; the panel's only job is to surface the choice.
+  policyPreset: PolicyPresetId;
+  onPolicyPresetChange: (id: PolicyPresetId) => void;
 };
 
 export function DevPanel({
@@ -43,6 +52,8 @@ export function DevPanel({
   conversationId,
   messageCount,
   error,
+  policyPreset,
+  onPolicyPresetChange,
 }: DevPanelProps) {
   // Local toggle for which language's prompts to show. Independent of
   // the auto-detected `language` so the developer can visually scan
@@ -104,6 +115,12 @@ export function DevPanel({
           onRandom={handleRandom}
           onReset={reset}
           isStreaming={isStreaming}
+        />
+
+        <PolicySection
+          activeId={policyPreset}
+          onChange={onPolicyPresetChange}
+          language={promptLang}
         />
 
         {DEV_PROMPT_CATEGORIES.map((cat) => (
@@ -195,6 +212,56 @@ function ActionButtons({
         ↻ Reset chat
       </button>
     </div>
+  );
+}
+
+function PolicySection({
+  activeId,
+  onChange,
+  language,
+}: {
+  activeId: PolicyPresetId;
+  onChange: (id: PolicyPresetId) => void;
+  language: SupportedLanguage;
+}) {
+  return (
+    <section data-testid="dev-policy-section">
+      <div className="mb-1.5 flex items-center justify-between">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          {language === "fr" ? "Politique" : "Policy"}
+        </h3>
+        {activeId !== "none" && (
+          <span
+            className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-violet-800"
+            data-testid="dev-policy-active-badge"
+          >
+            {language === "fr" ? "Actif" : "Active"}
+          </span>
+        )}
+      </div>
+      <div className="space-y-1">
+        {POLICY_PRESETS.map((p) => {
+          const active = p.id === activeId;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onChange(p.id)}
+              title={p.hint[language]}
+              data-testid={`dev-policy-preset-${p.id}`}
+              data-active={active ? "true" : "false"}
+              className={`block w-full truncate rounded border px-2 py-1.5 text-left text-xs ${
+                active
+                  ? "border-violet-500 bg-violet-50 font-medium text-violet-900"
+                  : "border-gray-200 bg-white text-gray-800 hover:border-violet-400 hover:bg-violet-50"
+              }`}
+            >
+              {p.label[language]}
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

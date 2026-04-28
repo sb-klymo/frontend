@@ -13,6 +13,8 @@ function defaultProps() {
     conversationId: "conv-abc-12345",
     messageCount: 4,
     error: null as string | null,
+    policyPreset: "none" as const,
+    onPolicyPresetChange: vi.fn(),
   };
 }
 
@@ -144,5 +146,60 @@ describe("DevPanel — copy state", () => {
     expect(parsed.workflow_stage).toBe("pending_info");
     expect(parsed.detected_language).toBe("fr");
     expect(parsed.messages).toBe(4);
+  });
+});
+
+describe("DevPanel — policy presets", () => {
+  it("renders the policy section with all preset buttons", () => {
+    render(<DevPanel {...defaultProps()} />);
+    const section = screen.getByTestId("dev-policy-section");
+    expect(section).toBeInTheDocument();
+    // Pin the five preset ids — adding/removing one should be a
+    // deliberate test edit.
+    for (const id of [
+      "none",
+      "mixed_verdict",
+      "block_expensive",
+      "manager_only",
+      "train_preferred",
+    ]) {
+      expect(screen.getByTestId(`dev-policy-preset-${id}`)).toBeInTheDocument();
+    }
+  });
+
+  it("does not show the Active badge when preset is 'none'", () => {
+    render(<DevPanel {...defaultProps()} />);
+    expect(
+      screen.queryByTestId("dev-policy-active-badge"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the Active badge when a non-default preset is selected", () => {
+    render(
+      <DevPanel {...defaultProps()} policyPreset="block_expensive" />,
+    );
+    expect(
+      screen.getByTestId("dev-policy-active-badge"),
+    ).toBeInTheDocument();
+  });
+
+  it("clicking a preset calls onPolicyPresetChange with the id", () => {
+    const props = defaultProps();
+    render(<DevPanel {...props} />);
+    fireEvent.click(screen.getByTestId("dev-policy-preset-mixed_verdict"));
+    expect(props.onPolicyPresetChange).toHaveBeenCalledWith("mixed_verdict");
+  });
+
+  it("the active preset has data-active=true; others false", () => {
+    render(
+      <DevPanel {...defaultProps()} policyPreset="manager_only" />,
+    );
+    expect(
+      screen.getByTestId("dev-policy-preset-manager_only"),
+    ).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("dev-policy-preset-none")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
   });
 });

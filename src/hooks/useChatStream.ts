@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { OrgPolicySettings } from "@/lib/api/generated/types.gen";
 import { useChatStore } from "@/stores/chatStore";
 import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
 import type { DisplayedOffer } from "@/types/chat";
@@ -45,11 +46,28 @@ function randomId(): string {
   );
 }
 
-export function useChatStream(endpoint: string = "/api/chat") {
+export type UseChatStreamOptions = {
+  endpoint?: string;
+  /**
+   * Dev-only: forward an OrgPolicySettings shape with each request.
+   * The backend honors it only when not running in production; in
+   * production it's silently dropped. Stored in a ref so changes
+   * don't recreate `send` and tear down its in-flight reader.
+   */
+  devPolicyOverride?: OrgPolicySettings | null;
+};
+
+export function useChatStream(options: UseChatStreamOptions = {}) {
+  const { endpoint = "/api/chat", devPolicyOverride = null } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [workflowStage, setWorkflowStage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Latest override is read from a ref at send-time so swapping
+  // presets mid-conversation kicks in on the next message without
+  // restarting any active stream.
+  const devPolicyOverrideRef = useRef<OrgPolicySettings | null>(devPolicyOverride);
+  devPolicyOverrideRef.current = devPolicyOverride;
 
   const conversationId = useChatStore((s) => s.conversationId);
   const setConversationId = useChatStore((s) => s.setConversationId);
@@ -107,6 +125,12 @@ export function useChatStream(endpoint: string = "/api/chat") {
           body: JSON.stringify({
             message: userText,
             conversation_id: conversationId,
+            // Only included when set — keeps prod requests free of
+            // dev-only fields, and the backend ignores it anyway when
+            // settings.is_production is True.
+            ...(devPolicyOverrideRef.current !== null
+              ? { dev_policy_override: devPolicyOverrideRef.current }
+              : {}),
           }),
           signal: controller.signal,
         });

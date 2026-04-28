@@ -242,4 +242,72 @@ describe("useChatStream", () => {
     await waitFor(() => expect(result.current.error).toMatch(/500/));
     expect(result.current.isStreaming).toBe(false);
   });
+
+  it("omits dev_policy_override from request body when null", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    const { result } = renderHook(() =>
+      useChatStream({ devPolicyOverride: null }),
+    );
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body).not.toHaveProperty("dev_policy_override");
+    expect(body.message).toBe("hi");
+  });
+
+  it("forwards dev_policy_override in request body when set", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    const override = {
+      spend_cap_cents: 50_000,
+      manager_approval_threshold_cents: 30_000,
+    };
+    const { result } = renderHook(() =>
+      useChatStream({ devPolicyOverride: override }),
+    );
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.dev_policy_override).toEqual(override);
+  });
+
+  it("picks up the latest override at send-time (mid-conversation swap)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    const { result, rerender } = renderHook(
+      ({ override }: { override: Record<string, number> | null }) =>
+        useChatStream({ devPolicyOverride: override }),
+      { initialProps: { override: null as Record<string, number> | null } },
+    );
+
+    await act(async () => {
+      await result.current.send("first");
+    });
+    expect(
+      JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string),
+    ).not.toHaveProperty("dev_policy_override");
+
+    // Swap preset → next send must include the new override.
+    rerender({ override: { spend_cap_cents: 50_000 } });
+    await act(async () => {
+      await result.current.send("second");
+    });
+    const second = JSON.parse(
+      (fetchSpy.mock.calls[1]![1] as RequestInit).body as string,
+    );
+    expect(second.dev_policy_override).toEqual({ spend_cap_cents: 50_000 });
+  });
 });
