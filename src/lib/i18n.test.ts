@@ -30,6 +30,24 @@ describe("detectLanguage", () => {
     expect(detectLanguage("nous voudrions un vol")).toBe("fr");
   });
 
+  it("returns 'fr' for time/article/day/month words (regression for live bug)", () => {
+    // "Milan → Marseille la semaine prochaine" had no diacritic and no
+    // word from the original list. Expanded to cover French-only time,
+    // modifier, day, and month words.
+    expect(detectLanguage("Milan → Marseille la semaine prochaine")).toBe("fr");
+    expect(detectLanguage("vol Lyon Nice du 5 mai au 10 juin")).toBe("fr");
+    expect(detectLanguage("lundi prochain matin")).toBe("fr");
+    expect(detectLanguage("le mois prochain")).toBe("fr");
+    expect(detectLanguage("samedi soir")).toBe("fr");
+  });
+
+  it("does not misclassify ordinary English as French after expansion", () => {
+    expect(detectLanguage("flight to New York next week")).toBe("en");
+    expect(detectLanguage("I want a morning flight")).toBe("en");
+    // "mars" excluded from the list precisely so this stays English.
+    expect(detectLanguage("a one-way ticket to Mars please")).toBe("en");
+  });
+
   it("returns 'en' for ambiguous short replies (no French signals)", () => {
     expect(detectLanguage("CDG")).toBe("en");
     expect(detectLanguage("option 2")).toBe("en");

@@ -24,8 +24,15 @@ const FRENCH_DIACRITICS = /[àâäéèêëîïôöùûüÿçœæ]/i;
 // Common French function words. The word boundaries (`\b`) keep us from
 // matching e.g. "je" inside "subject". Order/casing handled by the regex
 // flags. We only need ONE hit to flip to French.
+//
+// MUST be kept in sync with backend
+// `src/agent/prompts/klymo_personality.py::_FRENCH_FUNCTION_WORDS`.
+// Only words with no realistic English overlap go in here, otherwise an
+// English sentence containing the word would be mis-classified. "mars"
+// is deliberately excluded (overlaps with the planet); diacritic months
+// are caught by FRENCH_DIACRITICS instead of being duplicated here.
 const FRENCH_FUNCTION_WORDS =
-  /\b(je|tu|nous|vous|pour|avec|dans|partir|aller|veux|voudrais|combien|quand|aujourd'hui|demain|moins|plus|aéroport)\b/i;
+  /\b(je|tu|nous|vous|pour|avec|dans|partir|aller|veux|voudrais|combien|quand|aujourd'hui|demain|moins|plus|aéroport|aeroport|comment|merci|annule|change|en fait|ça|cela|c'est|fait|premier|première|deuxième|troisième|semaine|semaines|mois|jour|jours|soir|soirs|matin|matins|nuit|nuits|midi|minuit|prochain|prochaine|prochains|prochaines|dernier|derniers|du|des|au|aux|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|janvier|avril|mai|juin|juillet|septembre|octobre|novembre)\b/i;
 
 export function detectLanguage(text: string | null | undefined): SupportedLanguage {
   if (!text) return "en";
