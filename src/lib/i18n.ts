@@ -62,7 +62,7 @@ const EN: Strings = {
   optionList: {
     header: (n) =>
       n === 1 ? "Here is 1 option for your trip:" : `Here are ${n} options for your trip:`,
-    footerLeading: "Reply with the one you want —",
+    footerLeading: "Reply with the one you want:",
     footerExampleRank: "option 1",
     footerExampleCheapest: "the cheapest",
     footerByAirline: "or describe by airline.",
@@ -80,7 +80,7 @@ const FR: Strings = {
   optionList: {
     header: (n) =>
       n === 1 ? "Voici 1 option pour votre voyage :" : `Voici ${n} options pour votre voyage :`,
-    footerLeading: "Répondez avec celle que vous voulez —",
+    footerLeading: "Répondez avec celle que vous voulez :",
     footerExampleRank: "option 1",
     footerExampleCheapest: "la moins chère",
     footerByAirline: "ou décrivez par compagnie.",
