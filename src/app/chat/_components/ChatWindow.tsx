@@ -2,14 +2,31 @@
 
 import { useEffect, useRef } from "react";
 
-import { useChatStream } from "@/hooks/useChatStream";
+import type { ChatMessage } from "@/hooks/useChatStream";
+import type { SupportedLanguage } from "@/lib/i18n";
 import { useChatStore } from "@/stores/chatStore";
 
 import { OptionList } from "./OptionList";
 
-export function ChatWindow() {
-  const { messages, error, isStreaming, send, stop, reset, language } =
-    useChatStream();
+export type ChatWindowProps = {
+  messages: ChatMessage[];
+  error: string | null;
+  isStreaming: boolean;
+  language: SupportedLanguage;
+  send: (text: string) => void | Promise<void>;
+  stop: () => void;
+  reset: () => void;
+};
+
+export function ChatWindow({
+  messages,
+  error,
+  isStreaming,
+  language,
+  send,
+  stop,
+  reset,
+}: ChatWindowProps) {
   const draft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
   const scrollRef = useRef<HTMLDivElement>(null);

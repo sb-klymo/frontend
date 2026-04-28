@@ -48,6 +48,7 @@ function randomId(): string {
 export function useChatStream(endpoint: string = "/api/chat") {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [workflowStage, setWorkflowStage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const conversationId = useChatStore((s) => s.conversationId);
@@ -142,6 +143,7 @@ export function useChatStream(endpoint: string = "/api/chat") {
                 break;
               case "done":
                 setConversationId(event.conversation_id);
+                setWorkflowStage(event.workflow_stage);
                 break;
               case "error":
                 setError(event.message);
@@ -176,6 +178,7 @@ export function useChatStream(endpoint: string = "/api/chat") {
     abortRef.current?.abort();
     setMessages([]);
     setError(null);
+    setWorkflowStage(null);
     useChatStore.getState().resetConversation();
   }, []);
 
@@ -192,7 +195,16 @@ export function useChatStream(endpoint: string = "/api/chat") {
     return "en";
   }, [messages]);
 
-  return { messages, error, isStreaming, send, stop, reset, language };
+  return {
+    messages,
+    error,
+    isStreaming,
+    send,
+    stop,
+    reset,
+    language,
+    workflowStage,
+  };
 }
 
 function parseSseFrame(raw: string): ServerEvent | null {
