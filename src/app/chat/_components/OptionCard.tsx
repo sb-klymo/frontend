@@ -47,11 +47,16 @@ function formatPrice(cents: number, currency: string): string {
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC", // stub data is UTC; live data should respect airport TZ later
-  });
+  // Parse HH:MM directly from the ISO string instead of going through
+  // `new Date(...)`. JS interprets a tz-less timestamp as LOCAL time and
+  // would shift "2026-06-01T08:00:00" by the user's local offset (e.g.
+  // Europe/Paris UTC+2 → 06:00) — but the bot's text confirmation prints
+  // 08:00 directly via Python strftime, so the rendered card was 2h off.
+  // Reading the substring keeps the displayed hour exactly as encoded.
+  // Phase 3 follow-up: switch to proper airport-TZ rendering when live
+  // Duffel data carries real timezone-stamped flight times.
+  const match = iso.match(/T(\d{2}:\d{2})/);
+  return match ? match[1]! : iso;
 }
 
 function SliceLine({ slice }: { slice: FlightSlice }) {
