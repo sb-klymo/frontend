@@ -134,6 +134,101 @@ describe("useChatStream", () => {
     expect(result.current.error).toBe("boom");
   });
 
+  it("attaches structured offers to the last assistant message", async () => {
+    // Step 8 — when the backend emits `event: options` after a message,
+    // the offers ride on the same assistant message so the renderer can
+    // show OptionCards instead of the redundant text bubble.
+    const optionsFrame =
+      'event: options\ndata: ' +
+      JSON.stringify({
+        offers: [
+          {
+            offer_id: "off_1",
+            rank: 1,
+            airline_name: "Air Stub",
+            airline_iata: "AS",
+            total_amount_cents: 45000,
+            total_currency: "EUR",
+            outbound: {
+              origin_iata: "CDG",
+              destination_iata: "JFK",
+              departure_datetime: "2026-06-01T08:00:00+00:00",
+              arrival_datetime: "2026-06-01T10:15:00+00:00",
+              duration_iso: "PT2H15M",
+            },
+            return_leg: null,
+            policy_status: "auto_approved",
+            policy_reason: "Within cap.",
+          },
+        ],
+        node: "search_present",
+      }) +
+      "\n\n";
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockSseResponse([
+        START_FRAME,
+        'event: message\ndata: {"content":"3 options for your trip:"}\n\n',
+        optionsFrame,
+        DONE_FRAME,
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("Paris to NYC June 1");
+    });
+
+    const last = result.current.messages[result.current.messages.length - 1]!;
+    expect(last.role).toBe("assistant");
+    expect(last.offers).toHaveLength(1);
+    expect(last.offers?.[0]?.offer_id).toBe("off_1");
+    expect(last.offers?.[0]?.policy_status).toBe("auto_approved");
+  });
+
+  it("creates a fresh assistant message if options arrive without a prior message", async () => {
+    // Defensive — the backend currently always emits message before options,
+    // but if the order ever flips, the hook should still surface the cards.
+    const optionsFrame =
+      'event: options\ndata: ' +
+      JSON.stringify({
+        offers: [
+          {
+            offer_id: "off_only",
+            rank: 1,
+            airline_name: "Air Stub",
+            airline_iata: "AS",
+            total_amount_cents: 45000,
+            total_currency: "EUR",
+            outbound: {
+              origin_iata: "CDG",
+              destination_iata: "JFK",
+              departure_datetime: "2026-06-01T08:00:00+00:00",
+              arrival_datetime: "2026-06-01T10:15:00+00:00",
+              duration_iso: "PT2H15M",
+            },
+            return_leg: null,
+            policy_status: "auto_approved",
+            policy_reason: "Within cap.",
+          },
+        ],
+      }) +
+      "\n\n";
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockSseResponse([START_FRAME, optionsFrame, DONE_FRAME]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const messages = result.current.messages;
+    const lastAssistant = messages.findLast((m) => m.role === "assistant");
+    expect(lastAssistant?.offers).toHaveLength(1);
+  });
+
   it("handles HTTP errors from the backend", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("server unreachable", { status: 500 }),

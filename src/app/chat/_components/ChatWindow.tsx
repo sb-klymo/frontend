@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useChatStore } from "@/stores/chatStore";
 
+import { OptionList } from "./OptionList";
+
 export function ChatWindow() {
   const { messages, error, isStreaming, send, stop, reset } = useChatStream();
   const draft = useChatStore((s) => s.draft);
@@ -34,9 +36,15 @@ export function ChatWindow() {
         {messages.length === 0 ? (
           <EmptyState />
         ) : (
-          messages.map((m) => (
-            <Bubble key={m.id} role={m.role} content={m.content} streaming={false} />
-          ))
+          messages.map((m) =>
+            m.offers ? (
+              // Structured offers replace the redundant text bubble — the
+              // OptionList carries the same info more cleanly.
+              <OptionList key={m.id} offers={m.offers} />
+            ) : (
+              <Bubble key={m.id} role={m.role} content={m.content} streaming={false} />
+            ),
+          )
         )}
         {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
           <Bubble role="assistant" content="…" streaming />

@@ -13,6 +13,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
+import type { DisplayedOffer } from "@/types/chat";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -20,11 +21,19 @@ export type ChatMessage = {
   id: string;
   role: ChatRole;
   content: string;
+  /**
+   * Structured flight offers attached via the `event: options` SSE frame.
+   * When present, the renderer should show <OptionList> instead of a plain
+   * text bubble for this message — the cards convey the same information
+   * the text content also carries.
+   */
+  offers?: DisplayedOffer[];
 };
 
 type ServerEvent =
   | { type: "start"; conversation_id: string }
   | { type: "message"; content: string; node?: string }
+  | { type: "options"; offers: DisplayedOffer[]; node?: string }
   | { type: "done"; workflow_stage: string | null; conversation_id: string }
   | { type: "error"; code: string; message: string };
 
@@ -53,6 +62,24 @@ export function useChatStream(endpoint: string = "/api/chat") {
         return [...prev.slice(0, -1), { ...last, content: last.content + content }];
       }
       return [...prev, { id: randomId(), role: "assistant", content }];
+    });
+  }, []);
+
+  const attachOffers = useCallback((offers: DisplayedOffer[]) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        // Same turn — augment the assistant message with the structured
+        // offers so the renderer can show OptionCards for it.
+        return [...prev.slice(0, -1), { ...last, offers }];
+      }
+      // Defensive: options arrived without a preceding message (shouldn't
+      // happen with the current backend, but if the order ever flips we
+      // stash them on a fresh assistant turn so the UI renders cleanly).
+      return [
+        ...prev,
+        { id: randomId(), role: "assistant", content: "", offers },
+      ];
     });
   }, []);
 
@@ -109,6 +136,9 @@ export function useChatStream(endpoint: string = "/api/chat") {
               case "message":
                 appendAssistantChunk(event.content);
                 break;
+              case "options":
+                attachOffers(event.offers);
+                break;
               case "done":
                 setConversationId(event.conversation_id);
                 break;
@@ -133,6 +163,7 @@ export function useChatStream(endpoint: string = "/api/chat") {
       setConversationId,
       setStreaming,
       appendAssistantChunk,
+      attachOffers,
     ],
   );
 
