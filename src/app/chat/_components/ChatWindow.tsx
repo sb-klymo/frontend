@@ -8,7 +8,8 @@ import { useChatStore } from "@/stores/chatStore";
 import { OptionList } from "./OptionList";
 
 export function ChatWindow() {
-  const { messages, error, isStreaming, send, stop, reset } = useChatStream();
+  const { messages, error, isStreaming, send, stop, reset, language } =
+    useChatStream();
   const draft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -40,7 +41,7 @@ export function ChatWindow() {
             m.offers ? (
               // Structured offers replace the redundant text bubble — the
               // OptionList carries the same info more cleanly.
-              <OptionList key={m.id} offers={m.offers} />
+              <OptionList key={m.id} offers={m.offers} language={language} />
             ) : (
               <Bubble key={m.id} role={m.role} content={m.content} streaming={false} />
             ),

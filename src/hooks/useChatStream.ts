@@ -11,8 +11,9 @@
  * Aborting mid-stream is supported via the returned `stop` callback.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
+import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
 import type { DisplayedOffer } from "@/types/chat";
 
 export type ChatRole = "user" | "assistant" | "system";
@@ -178,7 +179,20 @@ export function useChatStream(endpoint: string = "/api/chat") {
     useChatStore.getState().resetConversation();
   }, []);
 
-  return { messages, error, isStreaming, send, stop, reset };
+  // Detect the language from the most recent user message so the
+  // static UI labels (OptionList header/footer, OptionCard badges)
+  // can be rendered in FR or EN. The bot's conversational text is
+  // localised by the backend's phrase() helper; this is just for
+  // hardcoded React-rendered strings that don't go through it.
+  const language: SupportedLanguage = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m?.role === "user") return detectLanguage(m.content);
+    }
+    return "en";
+  }, [messages]);
+
+  return { messages, error, isStreaming, send, stop, reset, language };
 }
 
 function parseSseFrame(raw: string): ServerEvent | null {

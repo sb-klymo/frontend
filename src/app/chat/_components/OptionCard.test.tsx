@@ -93,4 +93,27 @@ describe("OptionCard", () => {
     expect(screen.getByText(/08:00/)).toBeInTheDocument();
     expect(screen.getByText(/14:30/)).toBeInTheDocument();
   });
+
+  it("renders French strings when language='fr'", () => {
+    render(<OptionCard offer={baseOffer} language="fr" />);
+    // "Option" stays the same in French (cognate); badge changes
+    expect(screen.getByText(/✓ approuvé/)).toBeInTheDocument();
+    expect(screen.queryByText(/✓ approved/)).toBeNull();
+  });
+
+  it("French manager-approval badge is localized", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          policy_status: "manager_approval_required",
+          policy_reason: "Au-delà du seuil.",
+        }}
+        language="fr"
+      />,
+    );
+    expect(
+      screen.getByText(/approbation manager requise/),
+    ).toBeInTheDocument();
+  });
 });

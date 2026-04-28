@@ -5,31 +5,34 @@
  * even though it's only used inside ChatWindow (client component) today.
  */
 
+import { strings, type SupportedLanguage } from "@/lib/i18n";
 import type { DisplayedOffer, FlightSlice, PolicyStatus } from "@/types/chat";
 
-const STATUS_META: Record<
-  PolicyStatus,
-  { label: string; pillClass: string }
-> = {
-  auto_approved: {
-    label: "✓ approved",
-    pillClass: "bg-green-100 text-green-800",
-  },
-  manager_approval_required: {
-    label: "⚠ requires manager approval",
-    pillClass: "bg-amber-100 text-amber-800",
-  },
-  finance_approval_required: {
-    label: "⚠ requires finance approval",
-    pillClass: "bg-amber-100 text-amber-800",
-  },
+const STATUS_PILL_CLASS: Record<PolicyStatus, string> = {
+  auto_approved: "bg-green-100 text-green-800",
+  manager_approval_required: "bg-amber-100 text-amber-800",
+  finance_approval_required: "bg-amber-100 text-amber-800",
   // Tool 5 filters blocked offers before this component sees them, but we
-  // keep the visual mapping defensive in case an upstream change leaks one.
-  policy_blocked: {
-    label: "✗ blocked",
-    pillClass: "bg-red-100 text-red-800",
-  },
+  // keep the mapping defensive in case an upstream change leaks one.
+  policy_blocked: "bg-red-100 text-red-800",
 };
+
+function statusLabel(
+  status: PolicyStatus,
+  language: SupportedLanguage,
+): string {
+  const t = strings(language).optionCard;
+  switch (status) {
+    case "auto_approved":
+      return t.badgeApproved;
+    case "manager_approval_required":
+      return t.badgeManagerApproval;
+    case "finance_approval_required":
+      return t.badgeFinanceApproval;
+    case "policy_blocked":
+      return t.badgeBlocked;
+  }
+}
 
 const CURRENCY_SYMBOL: Record<string, string> = {
   EUR: "€",
@@ -77,17 +80,18 @@ function SliceLine({ slice }: { slice: FlightSlice }) {
 
 export type OptionCardProps = {
   offer: DisplayedOffer;
+  language?: SupportedLanguage;
 };
 
-export function OptionCard({ offer }: OptionCardProps) {
-  const status = STATUS_META[offer.policy_status];
+export function OptionCard({ offer, language = "en" }: OptionCardProps) {
+  const t = strings(language).optionCard;
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-gray-500">
-              Option {offer.rank}
+              {t.optionLabel} {offer.rank}
             </span>
             <span className="truncate font-medium text-gray-900">
               {offer.airline_name}
@@ -107,9 +111,9 @@ export function OptionCard({ offer }: OptionCardProps) {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
         <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.pillClass}`}
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL_CLASS[offer.policy_status]}`}
         >
-          {status.label}
+          {statusLabel(offer.policy_status, language)}
         </span>
         {offer.policy_status !== "auto_approved" && (
           <span className="text-xs text-gray-500">{offer.policy_reason}</span>
