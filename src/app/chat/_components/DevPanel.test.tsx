@@ -149,6 +149,28 @@ describe("DevPanel — copy state", () => {
   });
 });
 
+describe("DevPanel — payment shortcut", () => {
+  it("renders the payment section with a link to the onboarding page", () => {
+    render(<DevPanel {...defaultProps()} />);
+    const section = screen.getByTestId("dev-payment-section");
+    expect(section).toBeInTheDocument();
+    const link = screen.getByTestId("dev-payment-setup-link");
+    expect(link).toHaveAttribute("href", "/onboarding/payment-method");
+  });
+
+  it("uses the FR label when prompt language is French (default)", () => {
+    render(<DevPanel {...defaultProps()} />);
+    expect(screen.getByText(/Enregistrer une carte/i)).toBeInTheDocument();
+  });
+
+  it("switches to the EN label when the user toggles to English", () => {
+    render(<DevPanel {...defaultProps()} />);
+    fireEvent.click(screen.getByRole("radio", { name: /en/i }));
+    expect(screen.getByText(/Save \/ replace card/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Enregistrer une carte/i)).toBeNull();
+  });
+});
+
 describe("DevPanel — policy presets", () => {
   it("renders the policy section with all preset buttons", () => {
     render(<DevPanel {...defaultProps()} />);
