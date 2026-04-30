@@ -77,8 +77,8 @@ export function StripeCardSetup({ clientSecret, onSuccess }: { clientSecret: str
 
 ## How to get `clientSecret`
 
-1. Frontend calls backend: `POST /onboarding/setup-intent` (authenticated)
-2. Backend creates `SetupIntent` with `usage: "off_session"` and returns `client_secret`
+1. Frontend calls backend: `POST /payment/setup-intent` (authenticated). In Klymo, the browser hits the Next.js BFF route `POST /api/payment/setup-intent`, which forwards the request server-side with the Supabase JWT — same pattern as `/api/chat`.
+2. Backend creates `SetupIntent` with `usage: "off_session"` and returns `{ client_secret, publishable_key, setup_intent_id }`
 3. Frontend passes `client_secret` to `<Elements options={{ clientSecret }}>`
 4. User submits → Stripe iframe validates + creates the PaymentMethod
 5. On success, backend is notified via `setup_intent.succeeded` webhook

@@ -13,6 +13,7 @@
  * the prompt text should appear.
  */
 
+import Link from "next/link";
 import { useState } from "react";
 
 import {
@@ -117,6 +118,8 @@ export function DevPanel({
           isStreaming={isStreaming}
         />
 
+        <PaymentSection language={promptLang} />
+
         <PolicySection
           activeId={policyPreset}
           onChange={onPolicyPresetChange}
@@ -212,6 +215,28 @@ function ActionButtons({
         ↻ Reset chat
       </button>
     </div>
+  );
+}
+
+function PaymentSection({ language }: { language: SupportedLanguage }) {
+  const labels =
+    language === "fr"
+      ? { heading: "Paiement", action: "Enregistrer une carte" }
+      : { heading: "Payment", action: "Save / replace card" };
+
+  return (
+    <section data-testid="dev-payment-section">
+      <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        {labels.heading}
+      </h3>
+      <Link
+        href="/onboarding/payment-method"
+        data-testid="dev-payment-setup-link"
+        className="block w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-left text-xs text-gray-800 hover:border-blue-400 hover:bg-blue-50"
+      >
+        💳 {labels.action}
+      </Link>
+    </section>
   );
 }
 
