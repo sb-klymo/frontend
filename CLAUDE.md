@@ -91,6 +91,10 @@ src/
 - **Context7** — live docs for React, Next.js, Tailwind, Zustand, TanStack Query
 - **GitHub** — issues, PRs, code search
 
+## Review workflow
+
+After finishing a non-trivial change (new feature, multi-file refactor, end-to-end debug session) and **before opening the PR**, propose `/review` to the user. This audits the diff against the project rules in `.claude/rules/*.md`, the test suite, and stub/live parity invariants — catching things like broken tests, hardcoded values that should reuse existing constants, and convention drift. For trivial edits (typo, single-line fix, comment-only change), skip the review.
+
 ## Conventions
 
 - `'use client'` directive ONLY when strictly needed (hooks, browser APIs, event handlers) — prefer Server Components by default
