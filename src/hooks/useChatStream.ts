@@ -11,7 +11,7 @@
  * Aborting mid-stream is supported via the returned `stop` callback.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OrgPolicySettings } from "@/lib/api/generated/types.gen";
 import { useChatStore } from "@/stores/chatStore";
 import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
@@ -65,9 +65,13 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   const abortRef = useRef<AbortController | null>(null);
   // Latest override is read from a ref at send-time so swapping
   // presets mid-conversation kicks in on the next message without
-  // restarting any active stream.
+  // restarting any active stream. Synced via useEffect to satisfy the
+  // react-hooks/refs rule (mutating refs during render is flagged in
+  // React 19's stricter compiler-aware ruleset).
   const devPolicyOverrideRef = useRef<OrgPolicySettings | null>(devPolicyOverride);
-  devPolicyOverrideRef.current = devPolicyOverride;
+  useEffect(() => {
+    devPolicyOverrideRef.current = devPolicyOverride;
+  }, [devPolicyOverride]);
 
   const conversationId = useChatStore((s) => s.conversationId);
   const setConversationId = useChatStore((s) => s.setConversationId);
@@ -211,13 +215,15 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   // can be rendered in FR or EN. The bot's conversational text is
   // localised by the backend's phrase() helper; this is just for
   // hardcoded React-rendered strings that don't go through it.
-  const language: SupportedLanguage = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m?.role === "user") return detectLanguage(m.content);
-    }
-    return "en";
-  }, [messages]);
+  //
+  // No manual `useMemo`: React Compiler (Next 16+) auto-memoizes
+  // pure derivations of inputs, and the previous imperative
+  // for-loop-with-early-return blocked compiler analysis
+  // (react-hooks/preserve-manual-memoization).
+  const lastUserMessage = messages.findLast((m) => m.role === "user");
+  const language: SupportedLanguage = lastUserMessage
+    ? detectLanguage(lastUserMessage.content)
+    : "en";
 
   return {
     messages,
