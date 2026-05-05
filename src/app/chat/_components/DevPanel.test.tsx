@@ -1,7 +1,43 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DevPanel } from "./DevPanel";
+
+/**
+ * DevPanel renders IssuingCardsSection which uses TanStack Query.
+ * In production the QueryClient comes from `<Providers>` in app/layout;
+ * tests need their own. Retry disabled so error paths don't burn the
+ * test budget.
+ */
+function renderWithClient(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
+  );
+}
+
+// IssuingCardsSection renders inside DevPanel and auto-fetches `/api/dev/cards`
+// when its section is open. None of the existing DevPanel tests assert on
+// that data — they just need the call to resolve so React Query doesn't sit
+// in a loading state that interferes with other queries.
+let originalFetch: typeof fetch;
+beforeAll(() => {
+  originalFetch = globalThis.fetch;
+  globalThis.fetch = vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ cards: [] }),
+    } as Response),
+  ) as unknown as typeof fetch;
+});
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+});
 
 function defaultProps() {
   return {
@@ -20,7 +56,7 @@ function defaultProps() {
 
 describe("DevPanel", () => {
   it("renders all category headings", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     // FR labels by default. Query at the heading level so we don't
     // collide with prompt-button titles that contain the same words
     // (e.g. "aller-retour Paris ↔ NYC…").
@@ -34,7 +70,7 @@ describe("DevPanel", () => {
 
   it("clicking a French prompt button calls send with the FR text", () => {
     const props = defaultProps();
-    render(<DevPanel {...props} />);
+    renderWithClient(<DevPanel {...props} />);
     const button = screen.getByRole("button", {
       name: /j'habite à Marseille et je veux aller à Toulouse demain/i,
     });
@@ -45,7 +81,7 @@ describe("DevPanel", () => {
   });
 
   it("toggling to EN swaps the prompts and category labels", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
 
     fireEvent.click(screen.getByRole("radio", { name: /en/i }));
 
@@ -58,7 +94,7 @@ describe("DevPanel", () => {
 
   it("does not call send while streaming (button disabled)", () => {
     const props = { ...defaultProps(), isStreaming: true };
-    render(<DevPanel {...props} />);
+    renderWithClient(<DevPanel {...props} />);
     const button = screen.getByRole("button", {
       name: /j'habite à Marseille/i,
     });
@@ -67,14 +103,14 @@ describe("DevPanel", () => {
 
   it("Reset button calls reset()", () => {
     const props = defaultProps();
-    render(<DevPanel {...props} />);
+    renderWithClient(<DevPanel {...props} />);
     fireEvent.click(screen.getByRole("button", { name: /Reset chat/i }));
     expect(props.reset).toHaveBeenCalledOnce();
   });
 
   it("Random button calls send with one of the prompts in the active language", () => {
     const props = defaultProps();
-    render(<DevPanel {...props} />);
+    renderWithClient(<DevPanel {...props} />);
     fireEvent.click(screen.getByRole("button", { name: /Random/i }));
     expect(props.send).toHaveBeenCalledOnce();
     const text = props.send.mock.calls[0]![0]! as string;
@@ -83,7 +119,7 @@ describe("DevPanel", () => {
   });
 
   it("State inspector shows stage / lang / msgs and a shortened conv_id", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     // The inspector defaults to open. Use testIds to avoid colliding with
     // the FR/EN toggle which also renders "fr" / "en" labels.
     expect(screen.getByTestId("state-stage").textContent).toBe("pending_info");
@@ -94,7 +130,7 @@ describe("DevPanel", () => {
   });
 
   it("State inspector surfaces last error when present", () => {
-    render(<DevPanel {...defaultProps()} error="Chat stream failed: 500" />);
+    renderWithClient(<DevPanel {...defaultProps()} error="Chat stream failed: 500" />);
     expect(screen.getByTestId("state-error").textContent).toBe(
       "Chat stream failed: 500",
     );
@@ -131,7 +167,7 @@ describe("DevPanel — copy state", () => {
   });
 
   it("Copy state writes a JSON snapshot to the clipboard", async () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     fireEvent.click(
       screen.getByRole("button", { name: /Copy state for bug report/i }),
     );
@@ -151,7 +187,7 @@ describe("DevPanel — copy state", () => {
 
 describe("DevPanel — payment shortcut", () => {
   it("renders the payment section with a link to the onboarding page", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     const section = screen.getByTestId("dev-payment-section");
     expect(section).toBeInTheDocument();
     const link = screen.getByTestId("dev-payment-setup-link");
@@ -159,12 +195,12 @@ describe("DevPanel — payment shortcut", () => {
   });
 
   it("uses the FR label when prompt language is French (default)", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     expect(screen.getByText(/Enregistrer une carte/i)).toBeInTheDocument();
   });
 
   it("switches to the EN label when the user toggles to English", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     fireEvent.click(screen.getByRole("radio", { name: /en/i }));
     expect(screen.getByText(/Save \/ replace card/i)).toBeInTheDocument();
     expect(screen.queryByText(/Enregistrer une carte/i)).toBeNull();
@@ -173,7 +209,7 @@ describe("DevPanel — payment shortcut", () => {
 
 describe("DevPanel — policy presets", () => {
   it("renders the policy section with all preset buttons", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     const section = screen.getByTestId("dev-policy-section");
     expect(section).toBeInTheDocument();
     // Pin the five preset ids — adding/removing one should be a
@@ -190,14 +226,14 @@ describe("DevPanel — policy presets", () => {
   });
 
   it("does not show the Active badge when preset is 'none'", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     expect(
       screen.queryByTestId("dev-policy-active-badge"),
     ).not.toBeInTheDocument();
   });
 
   it("shows the Active badge when a non-default preset is selected", () => {
-    render(
+    renderWithClient(
       <DevPanel {...defaultProps()} policyPreset="block_expensive" />,
     );
     expect(
@@ -207,13 +243,13 @@ describe("DevPanel — policy presets", () => {
 
   it("clicking a preset calls onPolicyPresetChange with the id", () => {
     const props = defaultProps();
-    render(<DevPanel {...props} />);
+    renderWithClient(<DevPanel {...props} />);
     fireEvent.click(screen.getByTestId("dev-policy-preset-mixed_verdict"));
     expect(props.onPolicyPresetChange).toHaveBeenCalledWith("mixed_verdict");
   });
 
   it("the active preset has data-active=true; others false", () => {
-    render(
+    renderWithClient(
       <DevPanel {...defaultProps()} policyPreset="manager_only" />,
     );
     expect(
@@ -240,7 +276,7 @@ describe("DevPanel — collapsible sections", () => {
   });
 
   it("clicking a section heading hides its body", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     // The "Aller-retour" body has buttons titled with prompt text.
     const promptBefore = screen.queryByRole("button", {
       name: /aller-retour Paris/i,
@@ -257,7 +293,7 @@ describe("DevPanel — collapsible sections", () => {
   });
 
   it("aria-expanded reflects collapsed state on the heading button", () => {
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     const heading = screen.getByRole("heading", { name: "Aller-retour" });
     const button = heading.parentElement!;
     expect(button).toHaveAttribute("aria-expanded", "true");
@@ -266,14 +302,14 @@ describe("DevPanel — collapsible sections", () => {
   });
 
   it("collapsed state persists across remount via localStorage", () => {
-    const { unmount } = render(<DevPanel {...defaultProps()} />);
+    const { unmount } = renderWithClient(<DevPanel {...defaultProps()} />);
     const heading = screen.getByRole("heading", { name: "Aller-retour" });
     fireEvent.click(heading.parentElement!);
     unmount();
 
     // localStorage should now hold the collapse record. Remount and
     // check the section comes up collapsed.
-    render(<DevPanel {...defaultProps()} />);
+    renderWithClient(<DevPanel {...defaultProps()} />);
     const button = screen.getByRole("heading", { name: "Aller-retour" })
       .parentElement!;
     expect(button).toHaveAttribute("aria-expanded", "false");
@@ -283,7 +319,7 @@ describe("DevPanel — collapsible sections", () => {
   });
 
   it("policy Active badge stays visible when the policy section is collapsed", () => {
-    render(<DevPanel {...defaultProps()} policyPreset="block_expensive" />);
+    renderWithClient(<DevPanel {...defaultProps()} policyPreset="block_expensive" />);
     const heading = screen.getByRole("heading", { name: "Politique" });
     fireEvent.click(heading.parentElement!);
     // Body collapsed (preset buttons gone) but the badge stays.
