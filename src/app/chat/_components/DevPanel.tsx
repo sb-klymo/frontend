@@ -27,6 +27,8 @@ import {
   type PolicyPresetId,
 } from "@/lib/policy-presets";
 
+import { IssuingCardsSection } from "./IssuingCardsSection";
+
 // ---------------------------------------------------------------------------
 // Collapsed-section persistence (localStorage).
 //
@@ -209,6 +211,12 @@ export function DevPanel({
           language={promptLang}
           open={isOpen("policy")}
           onToggle={() => toggle("policy")}
+        />
+
+        <IssuingCardsSection
+          language={promptLang}
+          open={isOpen("issuing-cards")}
+          onToggle={() => toggle("issuing-cards")}
         />
 
         {DEV_PROMPT_CATEGORIES.map((cat) => (
