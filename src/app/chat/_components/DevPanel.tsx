@@ -14,7 +14,7 @@
  */
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   DEV_PROMPT_CATEGORIES,
@@ -26,6 +26,13 @@ import {
   POLICY_PRESETS,
   type PolicyPresetId,
 } from "@/lib/policy-presets";
+
+// localStorage key for per-section collapsed state. Stored as
+// Record<sectionId, true> — only collapsed sections are present so an
+// empty record (first visit, cleared storage) defaults to all open.
+const COLLAPSED_STORAGE_KEY = "klymo-dev-panel-collapsed";
+
+type CollapsedState = Record<string, boolean>;
 
 export type DevPanelProps = {
   send: (text: string) => void | Promise<void>;
@@ -60,8 +67,44 @@ export function DevPanel({
   // the auto-detected `language` so the developer can visually scan
   // both sets.
   const [promptLang, setPromptLang] = useState<SupportedLanguage>("fr");
-  const [stateOpen, setStateOpen] = useState(true);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  // Per-section collapsed state. Hydrated from localStorage AFTER mount
+  // (not during render) to avoid SSR hydration mismatch — server renders
+  // with all-open default, client matches, then useEffect rehydrates if
+  // there's a non-empty persisted value.
+  const [collapsed, setCollapsed] = useState<CollapsedState>({});
+  const hydrated = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as CollapsedState;
+        // Only update state if the persisted record has actual entries
+        // — avoids a no-op re-render when storage is `{}` (default).
+        if (parsed && Object.keys(parsed).length > 0) {
+          setCollapsed(parsed);
+        }
+      }
+    } catch {
+      // Safari private mode / corrupt JSON — fall back to all-open default.
+    }
+    hydrated.current = true;
+  }, []);
+  useEffect(() => {
+    // Skip the first render's persist — we haven't read localStorage yet,
+    // so writing `{}` would clobber any persisted record before hydration
+    // even runs (StrictMode double-invokes effects, surfacing this).
+    if (!hydrated.current) return;
+    try {
+      window.localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed));
+    } catch {
+      // Best-effort persistence; ignore quota / private-mode failures.
+    }
+  }, [collapsed]);
+  const isOpen = (id: string) => !collapsed[id];
+  const toggle = (id: string) =>
+    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
 
   function handleSend(text: string) {
     if (isStreaming) return;
@@ -118,12 +161,18 @@ export function DevPanel({
           isStreaming={isStreaming}
         />
 
-        <PaymentSection language={promptLang} />
+        <PaymentSection
+          language={promptLang}
+          open={isOpen("payment")}
+          onToggle={() => toggle("payment")}
+        />
 
         <PolicySection
           activeId={policyPreset}
           onChange={onPolicyPresetChange}
           language={promptLang}
+          open={isOpen("policy")}
+          onToggle={() => toggle("policy")}
         />
 
         {DEV_PROMPT_CATEGORIES.map((cat) => (
@@ -133,13 +182,15 @@ export function DevPanel({
             language={promptLang}
             disabled={isStreaming}
             onSelect={handleSend}
+            open={isOpen(cat.key)}
+            onToggle={() => toggle(cat.key)}
           />
         ))}
       </div>
 
       <StateInspector
-        open={stateOpen}
-        onToggle={() => setStateOpen((v) => !v)}
+        open={isOpen("state")}
+        onToggle={() => toggle("state")}
         conversationId={conversationId}
         workflowStage={workflowStage}
         language={language}
@@ -218,7 +269,56 @@ function ActionButtons({
   );
 }
 
-function PaymentSection({ language }: { language: SupportedLanguage }) {
+/**
+ * Shared collapsible-section header. Click anywhere on the row to toggle.
+ *
+ * Click target wraps the `<h3>` (technically a heading-inside-button — the
+ * W3C ARIA Authoring Practices Guide recommends this exact disclosure
+ * pattern) so the textContent of the heading stays equal to the title
+ * (the chevron is a sibling span, marked aria-hidden). Tests that query
+ * `getAllByRole("heading")` continue to see the bare title.
+ */
+function CollapsibleHeader({
+  title,
+  open,
+  onToggle,
+  trailing,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  /** Optional badge/indicator rendered between the title and the chevron. */
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="mb-1.5 flex w-full items-center justify-between gap-2 text-left"
+    >
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        {title}
+      </h3>
+      <span className="flex items-center gap-2">
+        {trailing}
+        <span aria-hidden="true" className="text-xs text-gray-400">
+          {open ? "▾" : "▸"}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function PaymentSection({
+  language,
+  open,
+  onToggle,
+}: {
+  language: SupportedLanguage;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const labels =
     language === "fr"
       ? { heading: "Paiement", action: "Enregistrer une carte" }
@@ -226,16 +326,16 @@ function PaymentSection({ language }: { language: SupportedLanguage }) {
 
   return (
     <section data-testid="dev-payment-section">
-      <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-        {labels.heading}
-      </h3>
-      <Link
-        href="/onboarding/payment-method"
-        data-testid="dev-payment-setup-link"
-        className="block w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-left text-xs text-gray-800 hover:border-blue-400 hover:bg-blue-50"
-      >
-        💳 {labels.action}
-      </Link>
+      <CollapsibleHeader title={labels.heading} open={open} onToggle={onToggle} />
+      {open && (
+        <Link
+          href="/onboarding/payment-method"
+          data-testid="dev-payment-setup-link"
+          className="block w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-left text-xs text-gray-800 hover:border-blue-400 hover:bg-blue-50"
+        >
+          💳 {labels.action}
+        </Link>
+      )}
     </section>
   );
 }
@@ -244,48 +344,60 @@ function PolicySection({
   activeId,
   onChange,
   language,
+  open,
+  onToggle,
 }: {
   activeId: PolicyPresetId;
   onChange: (id: PolicyPresetId) => void;
   language: SupportedLanguage;
+  open: boolean;
+  onToggle: () => void;
 }) {
+  // Active-preset badge stays visible whether the section is collapsed
+  // or expanded — at-a-glance indication that a non-default policy is in
+  // effect even when the body is hidden.
+  const activeBadge =
+    activeId !== "none" ? (
+      <span
+        className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-violet-800"
+        data-testid="dev-policy-active-badge"
+      >
+        {language === "fr" ? "Actif" : "Active"}
+      </span>
+    ) : null;
+
   return (
     <section data-testid="dev-policy-section">
-      <div className="mb-1.5 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-          {language === "fr" ? "Politique" : "Policy"}
-        </h3>
-        {activeId !== "none" && (
-          <span
-            className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-violet-800"
-            data-testid="dev-policy-active-badge"
-          >
-            {language === "fr" ? "Actif" : "Active"}
-          </span>
-        )}
-      </div>
-      <div className="space-y-1">
-        {POLICY_PRESETS.map((p) => {
-          const active = p.id === activeId;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => onChange(p.id)}
-              title={p.hint[language]}
-              data-testid={`dev-policy-preset-${p.id}`}
-              data-active={active ? "true" : "false"}
-              className={`block w-full truncate rounded border px-2 py-1.5 text-left text-xs ${
-                active
-                  ? "border-violet-500 bg-violet-50 font-medium text-violet-900"
-                  : "border-gray-200 bg-white text-gray-800 hover:border-violet-400 hover:bg-violet-50"
-              }`}
-            >
-              {p.label[language]}
-            </button>
-          );
-        })}
-      </div>
+      <CollapsibleHeader
+        title={language === "fr" ? "Politique" : "Policy"}
+        open={open}
+        onToggle={onToggle}
+        trailing={activeBadge}
+      />
+      {open && (
+        <div className="space-y-1">
+          {POLICY_PRESETS.map((p) => {
+            const active = p.id === activeId;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onChange(p.id)}
+                title={p.hint[language]}
+                data-testid={`dev-policy-preset-${p.id}`}
+                data-active={active ? "true" : "false"}
+                className={`block w-full truncate rounded border px-2 py-1.5 text-left text-xs ${
+                  active
+                    ? "border-violet-500 bg-violet-50 font-medium text-violet-900"
+                    : "border-gray-200 bg-white text-gray-800 hover:border-violet-400 hover:bg-violet-50"
+                }`}
+              >
+                {p.label[language]}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
@@ -295,34 +407,42 @@ function CategorySection({
   language,
   disabled,
   onSelect,
+  open,
+  onToggle,
 }: {
   category: DevPromptCategory;
   language: SupportedLanguage;
   disabled: boolean;
   onSelect: (text: string) => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
   return (
     <section>
-      <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-        {category.label[language]}
-      </h3>
-      <div className="space-y-1">
-        {category.prompts.map((p) => {
-          const text = p[language];
-          return (
-            <button
-              key={text}
-              type="button"
-              onClick={() => onSelect(text)}
-              disabled={disabled}
-              title={text}
-              className="block w-full truncate rounded border border-gray-200 bg-white px-2 py-1.5 text-left text-xs text-gray-800 hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {text}
-            </button>
-          );
-        })}
-      </div>
+      <CollapsibleHeader
+        title={category.label[language]}
+        open={open}
+        onToggle={onToggle}
+      />
+      {open && (
+        <div className="space-y-1">
+          {category.prompts.map((p) => {
+            const text = p[language];
+            return (
+              <button
+                key={text}
+                type="button"
+                onClick={() => onSelect(text)}
+                disabled={disabled}
+                title={text}
+                className="block w-full truncate rounded border border-gray-200 bg-white px-2 py-1.5 text-left text-xs text-gray-800 hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {text}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

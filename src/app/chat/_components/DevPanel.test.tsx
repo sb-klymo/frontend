@@ -225,3 +225,71 @@ describe("DevPanel — policy presets", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Collapsible sections + localStorage persistence
+// ---------------------------------------------------------------------------
+
+describe("DevPanel — collapsible sections", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("clicking a section heading hides its body", () => {
+    render(<DevPanel {...defaultProps()} />);
+    // The "Aller-retour" body has buttons titled with prompt text.
+    const promptBefore = screen.queryByRole("button", {
+      name: /aller-retour Paris/i,
+    });
+    expect(promptBefore).toBeInTheDocument();
+
+    // The heading is wrapped in a button (disclosure pattern).
+    const heading = screen.getByRole("heading", { name: "Aller-retour" });
+    fireEvent.click(heading.parentElement!);
+
+    expect(
+      screen.queryByRole("button", { name: /aller-retour Paris/i }),
+    ).toBeNull();
+  });
+
+  it("aria-expanded reflects collapsed state on the heading button", () => {
+    render(<DevPanel {...defaultProps()} />);
+    const heading = screen.getByRole("heading", { name: "Aller-retour" });
+    const button = heading.parentElement!;
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("collapsed state persists across remount via localStorage", () => {
+    const { unmount } = render(<DevPanel {...defaultProps()} />);
+    const heading = screen.getByRole("heading", { name: "Aller-retour" });
+    fireEvent.click(heading.parentElement!);
+    unmount();
+
+    // localStorage should now hold the collapse record. Remount and
+    // check the section comes up collapsed.
+    render(<DevPanel {...defaultProps()} />);
+    const button = screen.getByRole("heading", { name: "Aller-retour" })
+      .parentElement!;
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: /aller-retour Paris/i }),
+    ).toBeNull();
+  });
+
+  it("policy Active badge stays visible when the policy section is collapsed", () => {
+    render(<DevPanel {...defaultProps()} policyPreset="block_expensive" />);
+    const heading = screen.getByRole("heading", { name: "Politique" });
+    fireEvent.click(heading.parentElement!);
+    // Body collapsed (preset buttons gone) but the badge stays.
+    expect(
+      screen.queryByTestId("dev-policy-preset-block_expensive"),
+    ).toBeNull();
+    expect(screen.getByTestId("dev-policy-active-badge")).toBeInTheDocument();
+  });
+});
