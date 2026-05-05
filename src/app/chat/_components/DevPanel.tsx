@@ -14,7 +14,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 
 import {
   DEV_PROMPT_CATEGORIES,
@@ -27,12 +27,70 @@ import {
   type PolicyPresetId,
 } from "@/lib/policy-presets";
 
-// localStorage key for per-section collapsed state. Stored as
-// Record<sectionId, true> — only collapsed sections are present so an
-// empty record (first visit, cleared storage) defaults to all open.
+// ---------------------------------------------------------------------------
+// Collapsed-section persistence (localStorage).
+//
+// localStorage key. Stored as Record<sectionId, true> — only collapsed
+// sections are present, so an empty record (first visit, cleared storage)
+// defaults to all open.
 const COLLAPSED_STORAGE_KEY = "klymo-dev-panel-collapsed";
+// Same-window writes don't fire a "storage" event (that only fires
+// cross-tab), so we dispatch this custom event ourselves to nudge
+// `useSyncExternalStore` subscribers in the writing tab.
+const COLLAPSED_LOCAL_EVENT = "klymo:dev-panel-collapsed-write";
 
 type CollapsedState = Record<string, boolean>;
+const EMPTY_COLLAPSED: CollapsedState = Object.freeze({});
+
+// Snapshot cache — useSyncExternalStore requires a stable reference for
+// unchanged state (otherwise it tears in StrictMode and re-renders on
+// every read). We memoize on the raw localStorage string.
+let cachedRaw: string | null | undefined = undefined;
+let cachedSnapshot: CollapsedState = EMPTY_COLLAPSED;
+
+function readCollapsedSnapshot(): CollapsedState {
+  if (typeof window === "undefined") return EMPTY_COLLAPSED;
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
+  } catch {
+    return EMPTY_COLLAPSED;
+  }
+  if (raw === cachedRaw) return cachedSnapshot;
+  cachedRaw = raw;
+  try {
+    cachedSnapshot = raw ? (JSON.parse(raw) as CollapsedState) : EMPTY_COLLAPSED;
+  } catch {
+    cachedSnapshot = EMPTY_COLLAPSED;
+  }
+  return cachedSnapshot;
+}
+
+function subscribeCollapsed(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", callback);
+  window.addEventListener(COLLAPSED_LOCAL_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(COLLAPSED_LOCAL_EVENT, callback);
+  };
+}
+
+function writeCollapsed(value: CollapsedState): void {
+  try {
+    window.localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(value));
+    window.dispatchEvent(new Event(COLLAPSED_LOCAL_EVENT));
+  } catch {
+    // Best-effort persistence — quota exceeded / private mode etc.
+  }
+}
+
+// Server snapshot is always the empty default — no localStorage on the
+// server, so the SSR HTML matches the first client render before the
+// browser provides the real value.
+function getServerCollapsedSnapshot(): CollapsedState {
+  return EMPTY_COLLAPSED;
+}
 
 export type DevPanelProps = {
   send: (text: string) => void | Promise<void>;
@@ -69,42 +127,20 @@ export function DevPanel({
   const [promptLang, setPromptLang] = useState<SupportedLanguage>("fr");
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
-  // Per-section collapsed state. Hydrated from localStorage AFTER mount
-  // (not during render) to avoid SSR hydration mismatch — server renders
-  // with all-open default, client matches, then useEffect rehydrates if
-  // there's a non-empty persisted value.
-  const [collapsed, setCollapsed] = useState<CollapsedState>({});
-  const hydrated = useRef(false);
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as CollapsedState;
-        // Only update state if the persisted record has actual entries
-        // — avoids a no-op re-render when storage is `{}` (default).
-        if (parsed && Object.keys(parsed).length > 0) {
-          setCollapsed(parsed);
-        }
-      }
-    } catch {
-      // Safari private mode / corrupt JSON — fall back to all-open default.
-    }
-    hydrated.current = true;
-  }, []);
-  useEffect(() => {
-    // Skip the first render's persist — we haven't read localStorage yet,
-    // so writing `{}` would clobber any persisted record before hydration
-    // even runs (StrictMode double-invokes effects, surfacing this).
-    if (!hydrated.current) return;
-    try {
-      window.localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed));
-    } catch {
-      // Best-effort persistence; ignore quota / private-mode failures.
-    }
-  }, [collapsed]);
+  // Per-section collapsed state, synced with localStorage via
+  // `useSyncExternalStore` — the React 19 idiomatic way to subscribe
+  // to a non-React store. SSR returns the empty default so the first
+  // client render matches before the browser provides the real value.
+  const collapsed = useSyncExternalStore(
+    subscribeCollapsed,
+    readCollapsedSnapshot,
+    getServerCollapsedSnapshot,
+  );
   const isOpen = (id: string) => !collapsed[id];
-  const toggle = (id: string) =>
-    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggle = useCallback((id: string) => {
+    const current = readCollapsedSnapshot();
+    writeCollapsed({ ...current, [id]: !current[id] });
+  }, []);
 
   function handleSend(text: string) {
     if (isStreaming) return;
