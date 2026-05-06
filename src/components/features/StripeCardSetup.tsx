@@ -13,6 +13,16 @@
  * from the backend's `POST /payment/setup-intent` response. Carrying the
  * publishable key in the API response (rather than `NEXT_PUBLIC_*`) lets
  * the backend swap test/live without a frontend rebuild.
+ *
+ * Why `clientSecret` is passed only to `confirmCardSetup`, NOT to
+ * `<Elements options={{ clientSecret }}>`: in `@stripe/react-stripe-js@3.x`
+ * passing `clientSecret` to Elements puts it in PaymentElement mode (Link,
+ * wallets, multi-PM picker) — and `<CardElement>` won't inject its iframe
+ * in that mode (silent empty box). The two modes are exclusive. Since we
+ * use the legacy `<CardElement>`, Elements gets the bare `stripe={promise}`
+ * and `confirmCardSetup(clientSecret, { payment_method: { card } })` does
+ * the per-intent confirmation. Migrating to `<PaymentElement>` is on the
+ * post-MVP polish list.
  */
 
 import { useMemo, useState } from "react";
@@ -46,7 +56,7 @@ export function StripeCardSetup({
   );
 
   return (
-    <Elements stripe={promise} options={{ clientSecret }}>
+    <Elements stripe={promise}>
       <CardForm clientSecret={clientSecret} onSuccess={onSuccess} />
     </Elements>
   );
