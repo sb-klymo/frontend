@@ -6,6 +6,7 @@ import type { ChatMessage } from "@/hooks/useChatStream";
 import type { SupportedLanguage } from "@/lib/i18n";
 import { useChatStore } from "@/stores/chatStore";
 
+import { BookingConfirmationCard } from "./BookingConfirmationCard";
 import { OptionList } from "./OptionList";
 
 export type ChatWindowProps = {
@@ -54,15 +55,28 @@ export function ChatWindow({
         {messages.length === 0 ? (
           <EmptyState />
         ) : (
-          messages.map((m) =>
-            m.offers ? (
+          messages.map((m) => {
+            if (m.booking) {
+              // K1+K3 success — render the rich booking card with
+              // flight legs + ticket-download link instead of the
+              // plain "Booked. Reference XXX." text bubble.
+              return (
+                <BookingConfirmationCard
+                  key={m.id}
+                  booking={m.booking}
+                  language={language}
+                />
+              );
+            }
+            if (m.offers) {
               // Structured offers replace the redundant text bubble — the
               // OptionList carries the same info more cleanly.
-              <OptionList key={m.id} offers={m.offers} language={language} />
-            ) : (
+              return <OptionList key={m.id} offers={m.offers} language={language} />;
+            }
+            return (
               <Bubble key={m.id} role={m.role} content={m.content} streaming={false} />
-            ),
-          )
+            );
+          })
         )}
         {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
           <Bubble role="assistant" content="…" streaming />
