@@ -109,12 +109,54 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     devPolicyOverrideRef.current = devPolicyOverride;
   }, [devPolicyOverride]);
 
+  // Buffer streamed text during selection turns that may end with a
+  // booking. Without this, the user sees `select_node` + `checkout_node`
+  // tokens stream into a bubble for ~2s and then watches the bubble
+  // get nuked when the `event: booking` arrives and the rich card
+  // replaces it — a jarring "type then delete" flicker.
+  //
+  // Strategy:
+  //   * On send, if the previous turn ended at `awaiting_*_selection`,
+  //     we know this turn is the user picking — likely heading to
+  //     `checkout_ready` → `completed`. Mark the turn as buffering.
+  //   * While buffering, message chunks accumulate in `bufferedTextRef`
+  //     and DON'T touch `messages` — so no assistant bubble shows yet
+  //     (the existing typing-dots fallback in <ChatWindow> kicks in
+  //     because there's no assistant message to render).
+  //   * When `event: booking` arrives, the card lands as the assistant
+  //     message and the buffered text is discarded — the card is the
+  //     message.
+  //   * When `event: done` arrives WITHOUT a booking attached
+  //     (round-trip stage 1, blocked option, K1 failure path), the
+  //     buffered text is flushed into a normal text bubble so the
+  //     user sees the response — no information lost.
+  //
+  // Refs (not state) so updates inside the streaming loop don't trigger
+  // re-renders or fight the React 18+ batched updater.
+  const bufferingTurnRef = useRef(false);
+  const bufferedTextRef = useRef("");
+  // Mirror of `workflowStage` — read at send-time without putting
+  // workflowStage on `send`'s useCallback deps (which would recreate
+  // `send` every turn and tear down a fresh AbortController each time).
+  const workflowStageRef = useRef<string | null>(null);
+
   const conversationId = useChatStore((s) => s.conversationId);
   const setConversationId = useChatStore((s) => s.setConversationId);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const setStreaming = useChatStore((s) => s.setStreaming);
 
+  useEffect(() => {
+    workflowStageRef.current = workflowStage;
+  }, [workflowStage]);
+
   const appendAssistantChunk = useCallback((content: string) => {
+    // Selection-turn tokens go to the invisible buffer instead of an
+    // on-screen bubble. The booking event (or `done` fallback) decides
+    // what becomes visible. See bufferingTurnRef block above.
+    if (bufferingTurnRef.current) {
+      bufferedTextRef.current += content;
+      return;
+    }
     setMessages((prev) => {
       const last = prev[prev.length - 1];
       if (last?.role === "assistant") {
@@ -170,6 +212,15 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       setMessages((prev) => [...prev, userMsg]);
       setError(null);
       setStreaming(true);
+
+      // Selection turns may end with a successful booking → buffer the
+      // streamed text so the rich card doesn't replace visible text
+      // mid-flight (jarring "type then delete" flicker).
+      const stage = workflowStageRef.current;
+      bufferingTurnRef.current =
+        stage === "awaiting_departure_selection" ||
+        stage === "awaiting_return_selection";
+      bufferedTextRef.current = "";
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -237,6 +288,38 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               case "done":
                 setConversationId(event.conversation_id);
                 setWorkflowStage(event.workflow_stage);
+                // Flush buffered text if this was a buffered turn AND
+                // no booking event arrived to take its place. Common
+                // cases: round-trip stage 1 ("Departure locked, pick a
+                // return"), blocked option, K1 chain failure path —
+                // each emits text the user must see.
+                if (bufferingTurnRef.current) {
+                  const buffered = bufferedTextRef.current;
+                  bufferingTurnRef.current = false;
+                  bufferedTextRef.current = "";
+                  if (buffered) {
+                    setMessages((prev) => {
+                      const last = prev[prev.length - 1];
+                      // If a booking card already landed, the card is
+                      // the message — discard the buffered text.
+                      if (last?.role === "assistant" && last.booking) {
+                        return prev;
+                      }
+                      // Otherwise materialise the buffered text as a
+                      // normal assistant bubble.
+                      if (last?.role === "assistant") {
+                        return [
+                          ...prev.slice(0, -1),
+                          { ...last, content: last.content + buffered },
+                        ];
+                      }
+                      return [
+                        ...prev,
+                        { id: randomId(), role: "assistant", content: buffered },
+                      ];
+                    });
+                  }
+                }
                 break;
               case "error":
                 setError(event.message);

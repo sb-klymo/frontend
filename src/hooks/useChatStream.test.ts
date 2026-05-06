@@ -282,6 +282,180 @@ describe("useChatStream", () => {
     expect(body.dev_policy_override).toEqual(override);
   });
 
+  // -------------------------------------------------------------------------
+  // Selection-turn text buffering
+  //
+  // When the previous turn ended at `awaiting_*_selection` and the user is
+  // making a pick that may lead to a successful booking, the streaming text
+  // from `select_node` + `checkout_node` is held in a buffer. Either:
+  //   * `event: booking` arrives → the card lands as the message; buffered
+  //     text is discarded (no flicker — text never appears).
+  //   * `done` arrives without booking (round-trip stage 1, blocked option,
+  //     K1 failure) → buffered text materialises as a normal text bubble.
+  // -------------------------------------------------------------------------
+
+  function bookingFrame(overrides: Record<string, unknown> = {}): string {
+    return (
+      "event: booking\ndata: " +
+      JSON.stringify({
+        trip_id: "tr-abc",
+        booking_reference: "STUBABC",
+        passenger_name: "Jean Dupont",
+        amount_cents: 45000,
+        currency: "USD",
+        legs: [
+          {
+            origin_iata: "CDG",
+            destination_iata: "JFK",
+            departure_iso: "2026-06-01T08:00:00",
+            arrival_iso: "2026-06-01T17:30:00",
+            airline_name: "Air Stub",
+          },
+        ],
+        ...overrides,
+      }) +
+      "\n\n"
+    );
+  }
+
+  it("buffers select+checkout text when previous turn was a selection (booking lands)", async () => {
+    // Turn 1: stage transitions to `awaiting_departure_selection`.
+    // Turn 2: user picks → backend streams text → booking event fires →
+    // `done`. The streamed text MUST NOT appear in the final messages —
+    // the booking card replaces the bubble.
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: message\ndata: {"content":"Parfait, on part sur l\'option 1.","node":"select"}\n\n',
+          'event: message\ndata: {"content":" Booked. Reference STUBABC. Total $450 USD.","node":"checkout"}\n\n',
+          bookingFrame(),
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"completed"}\n\n',
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    // Turn 1 — stage moves to awaiting_departure_selection.
+    await act(async () => {
+      await result.current.send("vol Marseille → Toulouse demain");
+    });
+    expect(result.current.workflowStage).toBe("awaiting_departure_selection");
+
+    // Turn 2 — user picks. Streamed text is buffered, card replaces bubble.
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    // The card landed on this assistant message…
+    expect(lastAssistant?.booking).toBeDefined();
+    expect(lastAssistant?.booking?.booking_reference).toBe("STUBABC");
+    // …and the streamed text was suppressed (no flicker).
+    expect(lastAssistant?.content).toBe("");
+  });
+
+  it("flushes buffered text as a bubble when no booking arrives (round-trip stage 1)", async () => {
+    // Stage 1 of round-trip: user picks departure → bot says "Departure
+    // locked, pick a return". No booking event; the text MUST appear so
+    // the user knows what to do next.
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: message\ndata: {"content":"Ok, vol aller verrouillé. ","node":"select"}\n\n',
+          'event: message\ndata: {"content":"Et quel retour ?","node":"select"}\n\n',
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_return_selection"}\n\n',
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("aller-retour Paris → NYC");
+    });
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(lastAssistant?.booking).toBeUndefined();
+    expect(lastAssistant?.content).toBe("Ok, vol aller verrouillé. Et quel retour ?");
+  });
+
+  it("does NOT buffer when previous turn was not a selection turn", async () => {
+    // First send (no previous workflowStage) — buffering must NOT fire,
+    // streaming text appears as normal.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        'event: message\ndata: {"content":"Where would you like to go?","node":"ask"}\n\n',
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"pending_info"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    // Text rendered live in the bubble, not buffered.
+    expect(lastAssistant?.content).toBe("Where would you like to go?");
+  });
+
+  it("does not flush buffered text when booking event already attached the card", async () => {
+    // Defensive: even if backend ALSO sends streamed text after the
+    // booking event (it shouldn't, but might), the card stays the
+    // message — no buffered text leaks back into the bubble.
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: message\ndata: {"content":"Booking now…","node":"checkout"}\n\n',
+          bookingFrame(),
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"completed"}\n\n',
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(lastAssistant?.booking).toBeDefined();
+    // Buffered "Booking now…" is gone — the card is the message.
+    expect(lastAssistant?.content).toBe("");
+  });
+
   it("picks up the latest override at send-time (mid-conversation swap)", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
