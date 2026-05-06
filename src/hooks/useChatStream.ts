@@ -19,6 +19,35 @@ import type { DisplayedOffer } from "@/types/chat";
 
 export type ChatRole = "user" | "assistant" | "system";
 
+/**
+ * One leg of a confirmed booking, as projected by the backend's
+ * `booking` SSE event. Mirrors `src/notifications/pdf.py::TicketLeg`
+ * so the in-chat card and the email PDF show the same flight info.
+ */
+export type BookingLeg = {
+  origin_iata: string;
+  destination_iata: string;
+  departure_iso: string;
+  arrival_iso: string;
+  airline_name: string;
+};
+
+/**
+ * Structured booking confirmation attached via the `event: booking`
+ * SSE frame. Backend emits one of these per turn that lands
+ * `workflow_stage='completed'`. M3 frontend consumes it to render
+ * a rich BookingConfirmationCard with flight details + a download
+ * link for `/api/trips/{trip_id}/ticket.pdf`.
+ */
+export type BookingDetails = {
+  trip_id: string;
+  booking_reference: string;
+  passenger_name: string;
+  amount_cents: number;
+  currency: string;
+  legs: BookingLeg[];
+};
+
 export type ChatMessage = {
   id: string;
   role: ChatRole;
@@ -30,12 +59,19 @@ export type ChatMessage = {
    * the text content also carries.
    */
   offers?: DisplayedOffer[];
+  /**
+   * Structured booking confirmation attached via the `event: booking`
+   * SSE frame. When present, the renderer shows the
+   * BookingConfirmationCard instead of the plain text bubble.
+   */
+  booking?: BookingDetails;
 };
 
 type ServerEvent =
   | { type: "start"; conversation_id: string }
   | { type: "message"; content: string; node?: string }
   | { type: "options"; offers: DisplayedOffer[]; node?: string }
+  | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[] }
   | { type: "done"; workflow_stage: string | null; conversation_id: string }
   | { type: "error"; code: string; message: string };
 
@@ -107,6 +143,25 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
+  const attachBooking = useCallback((booking: BookingDetails) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        // Same turn — augment the assistant message so the renderer
+        // shows the BookingConfirmationCard instead of the plain
+        // "Booked. Reference STUBXXX" text bubble.
+        return [...prev.slice(0, -1), { ...last, booking }];
+      }
+      // Defensive: booking arrived without a preceding assistant
+      // message (shouldn't happen, but a stub or future graph could
+      // emit booking before any message).
+      return [
+        ...prev,
+        { id: randomId(), role: "assistant", content: "", booking },
+      ];
+    });
+  }, []);
+
   const send = useCallback(
     async (userText: string) => {
       if (!userText.trim() || isStreaming) return;
@@ -169,6 +224,16 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               case "options":
                 attachOffers(event.offers);
                 break;
+              case "booking":
+                attachBooking({
+                  trip_id: event.trip_id,
+                  booking_reference: event.booking_reference,
+                  passenger_name: event.passenger_name,
+                  amount_cents: event.amount_cents,
+                  currency: event.currency,
+                  legs: event.legs,
+                });
+                break;
               case "done":
                 setConversationId(event.conversation_id);
                 setWorkflowStage(event.workflow_stage);
@@ -195,6 +260,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       setStreaming,
       appendAssistantChunk,
       attachOffers,
+      attachBooking,
     ],
   );
 

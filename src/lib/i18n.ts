@@ -56,6 +56,15 @@ type Strings = {
     badgeFinanceApproval: string;
     badgeBlocked: string;
   };
+  bookingCard: {
+    title: string;
+    bookingReferenceLabel: string;
+    passengerLabel: string;
+    flightLabel: string;
+    totalLabel: string;
+    downloadLabel: string;
+    emailNote: string;
+  };
 };
 
 const EN: Strings = {
@@ -74,6 +83,15 @@ const EN: Strings = {
     badgeFinanceApproval: "⚠ requires finance approval",
     badgeBlocked: "✗ blocked",
   },
+  bookingCard: {
+    title: "Booking confirmed",
+    bookingReferenceLabel: "Booking reference",
+    passengerLabel: "Passenger",
+    flightLabel: "Flight",
+    totalLabel: "Total charged",
+    downloadLabel: "↓ Download ticket",
+    emailNote: "A copy is on its way to your inbox.",
+  },
 };
 
 const FR: Strings = {
@@ -91,6 +109,15 @@ const FR: Strings = {
     badgeManagerApproval: "⚠ approbation manager requise",
     badgeFinanceApproval: "⚠ approbation finance requise",
     badgeBlocked: "✗ bloqué",
+  },
+  bookingCard: {
+    title: "Réservation confirmée",
+    bookingReferenceLabel: "Référence",
+    passengerLabel: "Passager",
+    flightLabel: "Vol",
+    totalLabel: "Total prélevé",
+    downloadLabel: "↓ Télécharger le billet",
+    emailNote: "Une copie arrive dans votre boîte mail.",
   },
 };
 
