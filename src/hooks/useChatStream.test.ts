@@ -4,6 +4,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatStore } from "@/stores/chatStore";
 import { useChatStream } from "./useChatStream";
 
+// M2-H3 — mock the Supabase browser client. The hook subscribes to
+// Realtime when a CheckoutPaymentCard arrives; tests don't have the
+// NEXT_PUBLIC_* env vars wired, and we don't want a real WS in tests
+// anyway. The mock is module-scoped so all tests in this file share
+// the same `mockChannel` / `mockRemoveChannel`; individual tests
+// reset call history via `vi.restoreAllMocks()` in `beforeEach`.
+const mockOn = vi.fn().mockReturnThis();
+const mockSubscribe = vi.fn().mockReturnThis();
+const mockChannel = vi.fn(() => ({ on: mockOn, subscribe: mockSubscribe }));
+const mockRemoveChannel = vi.fn();
+const mockSetAuth = vi.fn();
+const mockGetSession = vi.fn(async () => ({
+  data: { session: { access_token: "test-jwt-token" } },
+}));
+let lastPostgresChangesHandler:
+  | ((payload: { new: Record<string, unknown> }) => void)
+  | null = null;
+
+vi.mock("@/lib/supabase/browser", () => ({
+  createSupabaseBrowserClient: () => ({
+    channel: mockChannel,
+    removeChannel: mockRemoveChannel,
+    auth: { getSession: mockGetSession },
+    realtime: { setAuth: mockSetAuth },
+  }),
+}));
+
+// Capture the postgres_changes handler so individual tests can
+// invoke it directly (simulating a Realtime UPDATE event).
+mockOn.mockImplementation((_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+  lastPostgresChangesHandler = handler;
+  return { on: mockOn, subscribe: mockSubscribe };
+});
+
 /**
  * Build a fake fetch Response whose body streams the given SSE-formatted
  * chunks, one at a time, to mimic what the backend emits.
@@ -34,6 +68,21 @@ describe("useChatStream", () => {
   beforeEach(() => {
     useChatStore.getState().resetConversation();
     vi.restoreAllMocks();
+    // `restoreAllMocks` resets vi.fn() mocks too — reinstall the
+    // postgres_changes handler-capture and base return values so the
+    // Supabase mock keeps working across tests.
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
   });
 
   afterEach(() => {
@@ -483,5 +532,256 @@ describe("useChatStream", () => {
       (fetchSpy.mock.calls[1]![1] as RequestInit).body as string,
     );
     expect(second.dev_policy_override).toEqual({ spend_cap_cents: 50_000 });
+  });
+
+  // -------------------------------------------------------------------------
+  // M2 — `event: checkout_link` (Stripe Checkout for modes 2/3)
+  //
+  // Mirrors the booking event tests but for `payment_pending` turns.
+  // The buffering flush in `done` MUST also bail when a checkoutLink
+  // landed — otherwise the buffered selection-turn text would leak
+  // underneath the Checkout card.
+  // -------------------------------------------------------------------------
+
+  function checkoutLinkFrame(overrides: Record<string, unknown> = {}): string {
+    return (
+      "event: checkout_link\ndata: " +
+      JSON.stringify({
+        trip_id: "tr-mode2",
+        checkout_url: "https://checkout.stripe.com/c/pay/cs_test_xyz",
+        amount_cents: 51_900,
+        currency: "EUR",
+        ...overrides,
+      }) +
+      "\n\n"
+    );
+  }
+
+  it("attaches checkoutLink to the last assistant message on `event: checkout_link`", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        'event: message\ndata: {"content":"Click the link to complete your booking.","node":"checkout"}\n\n',
+        checkoutLinkFrame(),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("vol Marseille → Toulouse demain");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(lastAssistant?.checkoutLink).toBeDefined();
+    expect(lastAssistant?.checkoutLink?.checkout_url).toBe(
+      "https://checkout.stripe.com/c/pay/cs_test_xyz",
+    );
+    expect(lastAssistant?.checkoutLink?.amount_cents).toBe(51_900);
+    expect(lastAssistant?.checkoutLink?.currency).toBe("EUR");
+  });
+
+  it("buffers select+checkout text when checkout_link lands (no flicker)", async () => {
+    // Mode 2/3 selection turn: streamed text from select_node + checkout_node
+    // must NOT appear as a bubble — the CheckoutPaymentCard replaces it.
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: message\ndata: {"content":"On part sur l\'option 1. ","node":"select"}\n\n',
+          'event: message\ndata: {"content":"Click the link to complete your booking.","node":"checkout"}\n\n',
+          checkoutLinkFrame(),
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("vol Marseille → Toulouse demain");
+    });
+    expect(result.current.workflowStage).toBe("awaiting_departure_selection");
+
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(lastAssistant?.checkoutLink).toBeDefined();
+    expect(lastAssistant?.booking).toBeUndefined();
+    // Buffered streamed text was suppressed.
+    expect(lastAssistant?.content).toBe("");
+  });
+
+  it("does not flush buffered text when checkout_link already attached the card", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: message\ndata: {"content":"Generating link…","node":"checkout"}\n\n',
+          checkoutLinkFrame(),
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(lastAssistant?.checkoutLink).toBeDefined();
+    // Buffered "Generating link…" is gone — the card is the message.
+    expect(lastAssistant?.content).toBe("");
+  });
+
+  // -------------------------------------------------------------------------
+  // M2-H3 — Realtime subscription auto-morphs CheckoutPaymentCard to "paid"
+  // when the Stripe webhook fires. Subscription is keyed on the trip_id of
+  // the most recent un-paid checkout card; tearing down on reset/remount.
+  // -------------------------------------------------------------------------
+
+  it("subscribes to Supabase Realtime when a checkout_link arrives", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-realtime-1" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("vol Marseille → Toulouse demain");
+    });
+
+    // Auth must be hydrated BEFORE the channel is created — otherwise
+    // the subscription registers in `realtime.subscription` with
+    // `claims_role='anon'` and RLS silently drops every event. This
+    // assertion locks in the call ordering so a future refactor can't
+    // accidentally reintroduce the anon-claims regression.
+    expect(mockGetSession).toHaveBeenCalled();
+    expect(mockSetAuth).toHaveBeenCalledWith("test-jwt-token");
+    const setAuthOrder = mockSetAuth.mock.invocationCallOrder[0] ?? Infinity;
+    const channelOrder = mockChannel.mock.invocationCallOrder[0] ?? -Infinity;
+    expect(setAuthOrder).toBeLessThan(channelOrder);
+
+    // Channel name is trip-scoped — the filter passed to `.on()`
+    // narrows to that single transactions row.
+    expect(mockChannel).toHaveBeenCalledWith("txn-tr-realtime-1");
+    expect(mockOn).toHaveBeenCalledWith(
+      "postgres_changes",
+      expect.objectContaining({
+        event: "UPDATE",
+        schema: "public",
+        table: "transactions",
+        filter: "trip_id=eq.tr-realtime-1",
+      }),
+      expect.any(Function),
+    );
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("flips checkoutLink.paid=true when Realtime UPDATE delivers status='paid'", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-paid-1" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    expect(
+      result.current.messages.findLast((m) => m.checkoutLink)?.checkoutLink?.paid,
+    ).toBeFalsy();
+
+    // Simulate the webhook → UPDATE → Realtime payload.
+    expect(lastPostgresChangesHandler).toBeTruthy();
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "paid" } });
+    });
+
+    const last = result.current.messages.findLast((m) => m.checkoutLink);
+    expect(last?.checkoutLink?.paid).toBe(true);
+    // After the flag flips, the subscription tears down on the next
+    // commit (pendingTripId becomes null → cleanup runs).
+    await waitFor(() => {
+      expect(mockRemoveChannel).toHaveBeenCalled();
+    });
+  });
+
+  it("ignores non-paid statuses on the Realtime channel", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-ignored-1" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "pending" } });
+      lastPostgresChangesHandler!({ new: { status: "failed" } });
+    });
+
+    const last = result.current.messages.findLast((m) => m.checkoutLink);
+    // Only `status=paid` flips the flag; other statuses leave it alone
+    // (the card stays in pending UX rather than morphing prematurely).
+    expect(last?.checkoutLink?.paid).toBeFalsy();
+  });
+
+  it("unsubscribes on conversation reset", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-cleanup-1" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    expect(mockSubscribe).toHaveBeenCalled();
+    const removeChannelCallsBefore = mockRemoveChannel.mock.calls.length;
+
+    await act(async () => {
+      result.current.reset();
+    });
+
+    await waitFor(() => {
+      expect(mockRemoveChannel.mock.calls.length).toBeGreaterThan(
+        removeChannelCallsBefore,
+      );
+    });
   });
 });

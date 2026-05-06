@@ -11,10 +11,11 @@
  * Aborting mid-stream is supported via the returned `stop` callback.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OrgPolicySettings } from "@/lib/api/generated/types.gen";
 import { useChatStore } from "@/stores/chatStore";
 import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { DisplayedOffer } from "@/types/chat";
 
 export type ChatRole = "user" | "assistant" | "system";
@@ -48,6 +49,27 @@ export type BookingDetails = {
   legs: BookingLeg[];
 };
 
+/**
+ * Stripe Checkout link surfaced via `event: checkout_link` (M2). Fired
+ * for users on payment modes 2 (`checkout_opt_in`) and 3
+ * (`checkout_fallback`) when the agent reaches a billable offer — the
+ * frontend renders a CheckoutPaymentCard with a "Pay now" button rather
+ * than running the K1 auto-charge chain.
+ */
+export type CheckoutLinkDetails = {
+  trip_id: string;
+  checkout_url: string;
+  amount_cents: number;
+  currency: string;
+  /**
+   * Set to true once the Realtime subscription on `public.transactions`
+   * observes `status='paid'` for this trip (triggered by the Stripe
+   * webhook). Drives the `CheckoutPaymentCard` morph from pending /
+   * Pay-now to "Payment received ✓".
+   */
+  paid?: boolean;
+};
+
 export type ChatMessage = {
   id: string;
   role: ChatRole;
@@ -65,6 +87,12 @@ export type ChatMessage = {
    * BookingConfirmationCard instead of the plain text bubble.
    */
   booking?: BookingDetails;
+  /**
+   * Stripe Checkout link attached via the `event: checkout_link` SSE
+   * frame (M2). When present, the renderer shows the
+   * CheckoutPaymentCard instead of the plain text bubble.
+   */
+  checkoutLink?: CheckoutLinkDetails;
 };
 
 type ServerEvent =
@@ -72,6 +100,7 @@ type ServerEvent =
   | { type: "message"; content: string; node?: string }
   | { type: "options"; offers: DisplayedOffer[]; node?: string }
   | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[] }
+  | { type: "checkout_link"; trip_id: string; checkout_url: string; amount_cents: number; currency: string }
   | { type: "done"; workflow_stage: string | null; conversation_id: string }
   | { type: "error"; code: string; message: string };
 
@@ -185,6 +214,38 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
+  const markCheckoutPaid = useCallback((tripId: string) => {
+    // Patch `paid: true` on the message whose checkoutLink matches.
+    // Idempotent — calling repeatedly is a no-op once flagged. The
+    // Realtime subscription effect cleans itself up the moment this
+    // setter runs (the `pendingTripId` selector below excludes paid
+    // cards, so the dependency array changes and the effect tears
+    // down its channel).
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.checkoutLink && m.checkoutLink.trip_id === tripId && !m.checkoutLink.paid
+          ? { ...m, checkoutLink: { ...m.checkoutLink, paid: true } }
+          : m,
+      ),
+    );
+  }, []);
+
+  const attachCheckoutLink = useCallback((checkoutLink: CheckoutLinkDetails) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        // Same turn — augment the assistant message so the renderer
+        // shows the CheckoutPaymentCard instead of the plain
+        // "Click the link..." text bubble.
+        return [...prev.slice(0, -1), { ...last, checkoutLink }];
+      }
+      return [
+        ...prev,
+        { id: randomId(), role: "assistant", content: "", checkoutLink },
+      ];
+    });
+  }, []);
+
   const attachBooking = useCallback((booking: BookingDetails) => {
     setMessages((prev) => {
       const last = prev[prev.length - 1];
@@ -203,6 +264,86 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       ];
     });
   }, []);
+
+  // M2-H3 — auto-morph the CheckoutPaymentCard from "pending" to
+  // "paid" when the Stripe webhook fires. We subscribe to Supabase
+  // Realtime on `public.transactions` filtered by the most recent
+  // un-paid checkout's trip_id. RLS (server-side) restricts payload
+  // delivery to rows the user owns, so we don't need extra filters.
+  //
+  // `useMemo` lets React Compiler / hook deps observe the trip_id
+  // without re-running the imperative `findLast` on every render
+  // unrelated to messages.
+  const pendingTripId = useMemo(
+    () =>
+      messages.findLast((m) => m.checkoutLink && !m.checkoutLink.paid)
+        ?.checkoutLink?.trip_id ?? null,
+    [messages],
+  );
+
+  useEffect(() => {
+    if (!pendingTripId) return;
+    const supabase = createSupabaseBrowserClient();
+
+    // Explicitly hydrate the user's JWT into the Realtime client
+    // BEFORE `.subscribe()` runs. `@supabase/ssr`'s createBrowserClient
+    // reads cookies lazily — the auth listener auto-wire that calls
+    // `realtime.setAuth(token)` only fires once `getSession()` /
+    // `getUser()` is invoked. Without this `await`, the very first
+    // subscribe registers in `realtime.subscription` with
+    // `claims_role = 'anon'`, and our RLS policy (which is `to
+    // authenticated`) silently filters out every postgres_changes
+    // event on UPDATE.
+    //
+    // The async-IIFE pattern requires a `cancelled` flag: if
+    // pendingTripId changes (or the component unmounts) while
+    // getSession is in flight, we must NOT subscribe — otherwise
+    // the cleanup function above runs before `channel` is assigned
+    // and we leak a subscription.
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session) {
+        supabase.realtime.setAuth(session.access_token);
+      }
+      channel = supabase
+        .channel(`txn-${pendingTripId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "transactions",
+            filter: `trip_id=eq.${pendingTripId}`,
+          },
+          (payload: { new: Record<string, unknown> }) => {
+            const next = payload.new as { status?: string };
+            if (next.status === "paid") {
+              markCheckoutPaid(pendingTripId);
+            }
+          },
+        )
+        .subscribe();
+      // The unmount could have happened during `await` — clean up
+      // the channel we just created if so.
+      if (cancelled && channel) {
+        void supabase.removeChannel(channel);
+        channel = null;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      // Fire-and-forget — React's cleanup must be sync; the underlying
+      // websocket close runs async on the supabase-js side.
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [pendingTripId, markCheckoutPaid]);
 
   const send = useCallback(
     async (userText: string) => {
@@ -285,6 +426,14 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   legs: event.legs,
                 });
                 break;
+              case "checkout_link":
+                attachCheckoutLink({
+                  trip_id: event.trip_id,
+                  checkout_url: event.checkout_url,
+                  amount_cents: event.amount_cents,
+                  currency: event.currency,
+                });
+                break;
               case "done":
                 setConversationId(event.conversation_id);
                 setWorkflowStage(event.workflow_stage);
@@ -300,9 +449,13 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   if (buffered) {
                     setMessages((prev) => {
                       const last = prev[prev.length - 1];
-                      // If a booking card already landed, the card is
-                      // the message — discard the buffered text.
-                      if (last?.role === "assistant" && last.booking) {
+                      // If a booking or checkout-link card already
+                      // landed, the card is the message — discard the
+                      // buffered text so it doesn't leak underneath.
+                      if (
+                        last?.role === "assistant" &&
+                        (last.booking || last.checkoutLink)
+                      ) {
                         return prev;
                       }
                       // Otherwise materialise the buffered text as a
@@ -344,6 +497,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       appendAssistantChunk,
       attachOffers,
       attachBooking,
+      attachCheckoutLink,
     ],
   );
 

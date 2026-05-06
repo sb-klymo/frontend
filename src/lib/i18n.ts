@@ -65,6 +65,32 @@ type Strings = {
     downloadLabel: string;
     emailNote: string;
   };
+  checkoutCard: {
+    title: string;
+    amountLabel: string;
+    payNowLabel: string;
+    payNoteLabel: string;
+    paidTitle: string;
+    paidStatusLabel: string;
+    paidStatusValue: string;
+    paidNote: string;
+  };
+  paymentSuccess: {
+    title: string;
+    subtitle: string;
+    amountLabel: string;
+    statusLabel: string;
+    bookingReferenceLabel: string;
+    bookingPendingNote: string;
+    returnToChatNote: string;
+    notFoundTitle: string;
+    notFoundSubtitle: string;
+  };
+  paymentCanceled: {
+    title: string;
+    subtitle: string;
+    returnToChatNote: string;
+  };
 };
 
 const EN: Strings = {
@@ -92,6 +118,38 @@ const EN: Strings = {
     downloadLabel: "↓ Download ticket",
     emailNote: "A copy is on its way to your inbox.",
   },
+  checkoutCard: {
+    title: "Complete your booking",
+    amountLabel: "Amount",
+    payNowLabel: "↗ Pay now",
+    payNoteLabel: "Once paid, we'll email your ticket.",
+    paidTitle: "Payment received",
+    paidStatusLabel: "Status",
+    paidStatusValue: "Paid",
+    paidNote:
+      "We're finalizing your booking. The reference will land in your inbox shortly.",
+  },
+  paymentSuccess: {
+    title: "Payment received",
+    subtitle: "Thanks — we've got your payment.",
+    amountLabel: "Amount paid",
+    statusLabel: "Status",
+    bookingReferenceLabel: "Booking reference",
+    bookingPendingNote:
+      "We're finalizing your booking. The reference will land in your inbox shortly.",
+    returnToChatNote:
+      "You can close this tab — your chat is still open in the original window.",
+    notFoundTitle: "Transaction not found",
+    notFoundSubtitle:
+      "We couldn't find this transaction. If you just paid, give it a moment and refresh.",
+  },
+  paymentCanceled: {
+    title: "Payment canceled",
+    subtitle:
+      "No charge was made. You can try again from your chat at any time.",
+    returnToChatNote:
+      "You can close this tab — your chat is still open in the original window.",
+  },
 };
 
 const FR: Strings = {
@@ -118,6 +176,37 @@ const FR: Strings = {
     totalLabel: "Total prélevé",
     downloadLabel: "↓ Télécharger le billet",
     emailNote: "Une copie arrive dans votre boîte mail.",
+  },
+  checkoutCard: {
+    title: "Finalisez votre réservation",
+    amountLabel: "Montant",
+    payNowLabel: "↗ Payer maintenant",
+    payNoteLabel: "Une fois le paiement effectué, nous vous enverrons votre billet.",
+    paidTitle: "Paiement reçu",
+    paidStatusLabel: "Statut",
+    paidStatusValue: "Payé",
+    paidNote:
+      "Nous finalisons votre réservation. La référence vous sera envoyée par email sous peu.",
+  },
+  paymentSuccess: {
+    title: "Paiement reçu",
+    subtitle: "Merci — votre paiement est bien arrivé.",
+    amountLabel: "Montant payé",
+    statusLabel: "Statut",
+    bookingReferenceLabel: "Référence",
+    bookingPendingNote:
+      "Nous finalisons votre réservation. La référence vous sera envoyée par email sous peu.",
+    returnToChatNote:
+      "Vous pouvez fermer cet onglet — votre chat est toujours ouvert dans la fenêtre d'origine.",
+    notFoundTitle: "Transaction introuvable",
+    notFoundSubtitle:
+      "Nous n'avons pas trouvé cette transaction. Si vous venez de payer, patientez un instant et rafraîchissez.",
+  },
+  paymentCanceled: {
+    title: "Paiement annulé",
+    subtitle: "Aucun montant n'a été prélevé. Vous pouvez réessayer depuis le chat.",
+    returnToChatNote:
+      "Vous pouvez fermer cet onglet — votre chat est toujours ouvert dans la fenêtre d'origine.",
   },
 };
 
