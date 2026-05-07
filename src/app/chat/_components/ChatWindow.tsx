@@ -7,6 +7,7 @@ import type { SupportedLanguage } from "@/lib/i18n";
 import { useChatStore } from "@/stores/chatStore";
 
 import { BookingConfirmationCard } from "./BookingConfirmationCard";
+import { CheckoutPaymentCard } from "./CheckoutPaymentCard";
 import { OptionList } from "./OptionList";
 
 export type ChatWindowProps = {
@@ -56,6 +57,19 @@ export function ChatWindow({
           <EmptyState />
         ) : (
           messages.map((m) => {
+            if (m.checkoutLink) {
+              // Modes 2/3 — render the Stripe Checkout call-to-action
+              // card. Takes precedence over text/offers; only one of
+              // (checkoutLink, booking) can land per turn since the
+              // backend branches in checkout_node.
+              return (
+                <CheckoutPaymentCard
+                  key={m.id}
+                  checkoutLink={m.checkoutLink}
+                  language={language}
+                />
+              );
+            }
             if (m.booking) {
               // K1+K3 success — render the rich booking card with
               // flight legs + ticket-download link instead of the
