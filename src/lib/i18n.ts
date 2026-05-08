@@ -85,6 +85,11 @@ type Strings = {
     returnToChatNote: string;
     notFoundTitle: string;
     notFoundSubtitle: string;
+    serverErrorTitle: string;
+    serverErrorSubtitle: string;
+    refundedTitle: string;
+    refundedSubtitle: string;
+    refundedAmountLabel: string;
   };
   paymentCanceled: {
     title: string;
@@ -142,6 +147,13 @@ const EN: Strings = {
     notFoundTitle: "Transaction not found",
     notFoundSubtitle:
       "We couldn't find this transaction. If you just paid, give it a moment and refresh.",
+    serverErrorTitle: "We couldn't load your receipt",
+    serverErrorSubtitle:
+      "Your payment may still have gone through — check back in a moment, or your chat tab for the latest status.",
+    refundedTitle: "Booking failed — you've been refunded",
+    refundedSubtitle:
+      "We charged your card but couldn't complete the booking. The full amount has been returned automatically.",
+    refundedAmountLabel: "Refunded",
   },
   paymentCanceled: {
     title: "Payment canceled",
@@ -201,6 +213,13 @@ const FR: Strings = {
     notFoundTitle: "Transaction introuvable",
     notFoundSubtitle:
       "Nous n'avons pas trouvé cette transaction. Si vous venez de payer, patientez un instant et rafraîchissez.",
+    serverErrorTitle: "Impossible de charger votre reçu",
+    serverErrorSubtitle:
+      "Votre paiement a peut-être abouti — réessayez dans un instant, ou consultez l'onglet de votre chat pour le statut à jour.",
+    refundedTitle: "Réservation impossible — vous avez été remboursé",
+    refundedSubtitle:
+      "Votre carte a été débitée mais la réservation n'a pas pu être finalisée. La totalité du montant a été remboursée automatiquement.",
+    refundedAmountLabel: "Remboursé",
   },
   paymentCanceled: {
     title: "Paiement annulé",
