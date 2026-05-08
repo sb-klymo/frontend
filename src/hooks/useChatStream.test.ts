@@ -702,7 +702,7 @@ describe("useChatStream", () => {
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it("flips checkoutLink.paid=true when Realtime UPDATE delivers status='paid'", async () => {
+  it("flips checkoutLink.paid=true on status='paid' AND keeps channel alive for M2-bis", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       mockSseResponse([
         START_FRAME,
@@ -719,7 +719,10 @@ describe("useChatStream", () => {
       result.current.messages.findLast((m) => m.checkoutLink)?.checkoutLink?.paid,
     ).toBeFalsy();
 
-    // Simulate the webhook → UPDATE → Realtime payload.
+    const removeChannelCallsBefore = mockRemoveChannel.mock.calls.length;
+
+    // Simulate the FIRST webhook UPDATE (`status='paid'`, no
+    // duffel_order_id yet — that comes in a second UPDATE later).
     expect(lastPostgresChangesHandler).toBeTruthy();
     await act(async () => {
       lastPostgresChangesHandler!({ new: { status: "paid" } });
@@ -727,14 +730,18 @@ describe("useChatStream", () => {
 
     const last = result.current.messages.findLast((m) => m.checkoutLink);
     expect(last?.checkoutLink?.paid).toBe(true);
-    // After the flag flips, the subscription tears down on the next
-    // commit (pendingTripId becomes null → cleanup runs).
-    await waitFor(() => {
-      expect(mockRemoveChannel).toHaveBeenCalled();
-    });
+
+    // CRITICAL: the channel must STAY alive after the paid morph.
+    // Pre-fix this tore down the subscription, dropping the second
+    // UPDATE (duffel_order_id) on the floor and leaving the
+    // BookingConfirmationCard never hydrating. The teardown only runs
+    // once `booking` attaches OR a terminal status arrives — covered
+    // by the dedicated tests below.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(mockRemoveChannel.mock.calls.length).toBe(removeChannelCallsBefore);
   });
 
-  it("ignores non-paid statuses on the Realtime channel", async () => {
+  it("ignores non-terminal statuses on the Realtime channel", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       mockSseResponse([
         START_FRAME,
@@ -748,14 +755,15 @@ describe("useChatStream", () => {
       await result.current.send("turn 1");
     });
     await act(async () => {
+      // `pending` is the seed status — Realtime won't actually deliver
+      // it (no UPDATE has happened yet), but defensive: the handler
+      // should ignore it cleanly.
       lastPostgresChangesHandler!({ new: { status: "pending" } });
-      lastPostgresChangesHandler!({ new: { status: "failed" } });
     });
 
     const last = result.current.messages.findLast((m) => m.checkoutLink);
-    // Only `status=paid` flips the flag; other statuses leave it alone
-    // (the card stays in pending UX rather than morphing prematurely).
     expect(last?.checkoutLink?.paid).toBeFalsy();
+    expect(last?.checkoutLink?.failed).toBeFalsy();
   });
 
   it("unsubscribes on conversation reset", async () => {
@@ -823,7 +831,12 @@ describe("useChatStream", () => {
     };
   }
 
-  it("attaches BookingDetails when duffel_order_id morphs in", async () => {
+  it("attaches BookingDetails on the second UPDATE (paid then duffel_order_id)", async () => {
+    // Production fires TWO sequential Realtime events:
+    //   1. `set status='paid' where status='pending'`        (no order id)
+    //   2. `set duffel_order_id=… where … is null`           (~5–20s later)
+    // Pre-fix, the channel tore down between them — this regression
+    // test forces them sequentially and asserts both morphs land.
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -844,21 +857,34 @@ describe("useChatStream", () => {
     await act(async () => {
       await result.current.send("turn 1");
     });
-
     expect(lastPostgresChangesHandler).toBeTruthy();
+    const removeChannelCallsBefore = mockRemoveChannel.mock.calls.length;
+
+    // Event #1 — `status='paid'` only.
     await act(async () => {
-      // Webhook handler writes both fields atomically; mirror that
-      // payload shape so the test exercises the real morph.
+      lastPostgresChangesHandler!({
+        new: { status: "paid", duffel_order_id: null },
+      });
+    });
+    expect(
+      result.current.messages.findLast((m) => m.checkoutLink)?.checkoutLink?.paid,
+    ).toBe(true);
+    // Channel must still be alive — the booking-details fetch hasn't
+    // happened yet, no teardown should have run.
+    expect(mockRemoveChannel.mock.calls.length).toBe(removeChannelCallsBefore);
+
+    // Event #2 — `duffel_order_id` arrives. Same row, full snapshot
+    // includes the now-set status='paid' + the new order id.
+    await act(async () => {
       lastPostgresChangesHandler!({
         new: { status: "paid", duffel_order_id: "ord_test_plan_b" },
       });
-      // Settle the fetchAndAttachBooking microtask so the booking
-      // attaches before the assertions run.
+      // Settle the fetchAndAttachBooking microtasks.
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    // BFF route is the second fetch; it's same-origin (relative URL).
+    // BFF route fetched.
     expect(fetchSpy).toHaveBeenLastCalledWith(
       "/api/trips/tr-plan-b-1/booking-details",
       expect.objectContaining({ method: "GET", cache: "no-store" }),
@@ -869,6 +895,13 @@ describe("useChatStream", () => {
       expect(last?.booking?.booking_reference).toBe("PNRPLB123");
       expect(last?.booking?.legs).toHaveLength(1);
       expect(last?.booking?.legs[0]?.origin_iata).toBe("ORY");
+    });
+
+    // Now that booking is attached, the channel tears down.
+    await waitFor(() => {
+      expect(mockRemoveChannel.mock.calls.length).toBeGreaterThan(
+        removeChannelCallsBefore,
+      );
     });
   });
 
@@ -907,6 +940,48 @@ describe("useChatStream", () => {
     const last = result.current.messages.findLast((m) => m.role === "assistant");
     expect(last?.checkoutLink?.paid).toBe(true);
     expect(last?.booking).toBeUndefined();
+  });
+
+  it("tears down channel when paid is followed by terminal status='refunded'", async () => {
+    // Plan B can refund post-paid (PR 6 safety net fires when the
+    // M2-bis Duffel chain blows up). Without this teardown signal the
+    // channel would stay alive forever waiting for a `booking` that
+    // will never come — a memory + websocket leak for the rest of the
+    // session.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-refunded-1" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    const removeChannelCallsBefore = mockRemoveChannel.mock.calls.length;
+
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "paid" } });
+    });
+    // Channel still alive after paid (M2-bis hasn't finished yet).
+    expect(mockRemoveChannel.mock.calls.length).toBe(removeChannelCallsBefore);
+
+    // Refund safety net fires.
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "refunded" } });
+    });
+
+    const last = result.current.messages.findLast((m) => m.checkoutLink);
+    expect(last?.checkoutLink?.failed).toBe(true);
+    expect(last?.booking).toBeUndefined();
+
+    await waitFor(() => {
+      expect(mockRemoveChannel.mock.calls.length).toBeGreaterThan(
+        removeChannelCallsBefore,
+      );
+    });
   });
 
   it("ignores duffel_order_id morph when payload lacks it (M2 paid-only event)", async () => {

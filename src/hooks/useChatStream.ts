@@ -68,6 +68,18 @@ export type CheckoutLinkDetails = {
    * Pay-now to "Payment received ✓".
    */
   paid?: boolean;
+  /**
+   * Set to true when the Realtime subscription observes a terminal
+   * non-success status (`refunded` / `failed` / `canceled`) for this
+   * trip. Used purely as a teardown signal for the Realtime channel —
+   * `pendingTripId` keeps the channel alive past the `paid` morph
+   * waiting for `duffel_order_id` (the M2-bis Plan B booking signal),
+   * and `failed` releases that hold so the channel doesn't leak when
+   * PR 6's refund safety net fires instead. The chat-side failure UX
+   * itself surfaces via the differentiated SSE error frame from PR
+   * #25, not this field.
+   */
+  failed?: boolean;
 };
 
 export type ChatMessage = {
@@ -244,15 +256,36 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
 
   const markCheckoutPaid = useCallback((tripId: string) => {
     // Patch `paid: true` on the message whose checkoutLink matches.
-    // Idempotent — calling repeatedly is a no-op once flagged. The
-    // Realtime subscription effect cleans itself up the moment this
-    // setter runs (the `pendingTripId` selector below excludes paid
-    // cards, so the dependency array changes and the effect tears
-    // down its channel).
+    // Idempotent — calling repeatedly is a no-op once flagged.
+    //
+    // Pre-M2-bis (M2 only) this also triggered the Realtime channel
+    // teardown by flipping `paid=true` so `pendingTripId` excluded
+    // the message. With M2-bis shipped, the channel must stay alive
+    // past the paid morph to receive the second UPDATE that carries
+    // `duffel_order_id` — `pendingTripId`'s predicate now keys on
+    // `!m.booking && !m.checkoutLink.failed` instead.
     setMessages((prev) =>
       prev.map((m) =>
         m.checkoutLink && m.checkoutLink.trip_id === tripId && !m.checkoutLink.paid
           ? { ...m, checkoutLink: { ...m.checkoutLink, paid: true } }
+          : m,
+      ),
+    );
+  }, []);
+
+  const markBookingFailed = useCallback((tripId: string) => {
+    // Set `failed: true` on the matching checkoutLink. Sole purpose
+    // is to release the Realtime channel hold — without this, a
+    // post-paid Plan B failure (PR 6 refund safety net flips the
+    // transactions row to `refunded`, or the chain returns `failed` /
+    // `canceled`) would leave `pendingTripId` non-null forever
+    // because no `booking` ever attaches. The chat-side failure UX
+    // itself is delivered separately via the SSE error frame from
+    // PR #25 — this flag is invisible to the user.
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.checkoutLink && m.checkoutLink.trip_id === tripId && !m.checkoutLink.failed
+          ? { ...m, checkoutLink: { ...m.checkoutLink, failed: true } }
           : m,
       ),
     );
@@ -302,10 +335,25 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   // `useMemo` lets React Compiler / hook deps observe the trip_id
   // without re-running the imperative `findLast` on every render
   // unrelated to messages.
+  // Keep the Realtime channel alive until the booking is finalised one
+  // way or the other. Two terminal states:
+  //
+  //   * Success — `m.booking` attaches once the M2-bis post-Checkout
+  //     chain writes `transactions.duffel_order_id` and the second
+  //     Realtime UPDATE triggers our fetch.
+  //   * Failure — `m.checkoutLink.failed` flips when the chain refunds
+  //     / fails / cancels (transactions.status terminal value).
+  //
+  // Pre-M2-bis this used `!m.checkoutLink.paid`, which tore the channel
+  // down on the FIRST UPDATE (status='paid'). Since the M2-bis chain
+  // writes `duffel_order_id` in a SECOND UPDATE ~5–20s later, that
+  // event was firing into a dead channel and the BookingConfirmationCard
+  // never hydrated.
   const pendingTripId = useMemo(
     () =>
-      messages.findLast((m) => m.checkoutLink && !m.checkoutLink.paid)
-        ?.checkoutLink?.trip_id ?? null,
+      messages.findLast(
+        (m) => m.checkoutLink && !m.booking && !m.checkoutLink.failed,
+      )?.checkoutLink?.trip_id ?? null,
     [messages],
   );
 
@@ -367,6 +415,18 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             if (next.duffel_order_id) {
               void fetchAndAttachBooking(pendingTripId, attachBooking);
             }
+            // Plan B can also END with PR 6's refund safety net or a
+            // J4/J5 chain failure — `transactions.status` flips to a
+            // terminal non-success value. Release the channel hold so
+            // we don't keep listening forever waiting for a booking
+            // that will never come.
+            if (
+              next.status === "refunded" ||
+              next.status === "failed" ||
+              next.status === "canceled"
+            ) {
+              markBookingFailed(pendingTripId);
+            }
           },
         )
         .subscribe();
@@ -384,7 +444,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       // websocket close runs async on the supabase-js side.
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [pendingTripId, markCheckoutPaid, attachBooking]);
+  }, [pendingTripId, markCheckoutPaid, attachBooking, markBookingFailed]);
 
   const send = useCallback(
     async (userText: string) => {
