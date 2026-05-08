@@ -20,20 +20,37 @@ function renderWithClient(ui: ReactElement) {
   );
 }
 
-// IssuingCardsSection renders inside DevPanel and auto-fetches `/api/dev/cards`
-// when its section is open. None of the existing DevPanel tests assert on
-// that data — they just need the call to resolve so React Query doesn't sit
-// in a loading state that interferes with other queries.
+// DevPanel hosts two TanStack-Query-backed sections that auto-fetch when
+// open: `IssuingCardsSection` (/api/dev/cards) and `PaymentStatusSection`
+// (/api/me). None of the existing DevPanel tests assert on either's
+// rendered data — they just need both calls to resolve so React Query
+// doesn't sit in a loading state that interferes with other queries.
+// The shared mock dispatches per-URL so each section gets its own
+// well-shaped empty response.
 let originalFetch: typeof fetch;
 beforeAll(() => {
   originalFetch = globalThis.fetch;
-  globalThis.fetch = vi.fn(() =>
-    Promise.resolve({
+  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/me")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            id: "00000000-0000-0000-0000-000000000000",
+            email: "test@klymo.local",
+            payment_mode: "checkout_fallback",
+            stripe_payment_method_id: null,
+          }),
+      } as Response);
+    }
+    return Promise.resolve({
       ok: true,
       status: 200,
       json: () => Promise.resolve({ cards: [] }),
-    } as Response),
-  ) as unknown as typeof fetch;
+    } as Response);
+  }) as unknown as typeof fetch;
 });
 afterAll(() => {
   globalThis.fetch = originalFetch;
