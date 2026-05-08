@@ -57,27 +57,33 @@ export function ChatWindow({
           <EmptyState />
         ) : (
           messages.map((m) => {
-            if (m.checkoutLink) {
-              // Modes 2/3 — render the Stripe Checkout call-to-action
-              // card. Takes precedence over text/offers; only one of
-              // (checkoutLink, booking) can land per turn since the
-              // backend branches in checkout_node.
-              return (
-                <CheckoutPaymentCard
-                  key={m.id}
-                  checkoutLink={m.checkoutLink}
-                  language={language}
-                />
-              );
-            }
             if (m.booking) {
-              // K1+K3 success — render the rich booking card with
-              // flight legs + ticket-download link instead of the
-              // plain "Booked. Reference XXX." text bubble.
+              // K1 (SSE event:booking) and Plan B / M2-bis (Realtime
+              // morph → /api/trips/{id}/booking-details) both land
+              // here. In Plan B the SAME message also carries
+              // `checkoutLink` (the morph augments the existing
+              // CheckoutPaymentCard message in-place — see
+              // `attachBooking` in useChatStream.ts), so `booking`
+              // MUST win the render priority over `checkoutLink` —
+              // otherwise the booked card with PNR + flight legs +
+              // PDF download never appears.
               return (
                 <BookingConfirmationCard
                   key={m.id}
                   booking={m.booking}
+                  language={language}
+                />
+              );
+            }
+            if (m.checkoutLink) {
+              // Modes 2/3 in flight (Stripe Checkout link + paid
+              // morph). Falls through to here only when no booking
+              // is attached yet — once Plan B's M2-bis chain
+              // finalises, the branch above takes over.
+              return (
+                <CheckoutPaymentCard
+                  key={m.id}
+                  checkoutLink={m.checkoutLink}
                   language={language}
                 />
               );
