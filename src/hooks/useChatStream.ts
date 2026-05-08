@@ -111,6 +111,34 @@ function randomId(): string {
   );
 }
 
+/**
+ * Fetch the BookingConfirmationCard payload after Plan B (M2-bis)
+ * finalises a booking server-side. The chat tab has no open SSE stream
+ * at webhook time, so the Realtime morph on `transactions.duffel_order_id`
+ * triggers this REST hop.
+ *
+ * Defensive: a non-200 response is logged-and-swallowed (e.g. 409
+ * "ticket_not_ready" can fire if the morph delivers ahead of the
+ * persistence write — the next morph will retry). Never throws into
+ * the postgres_changes handler, which would tear down the channel.
+ */
+async function fetchAndAttachBooking(
+  tripId: string,
+  attach: (booking: BookingDetails) => void,
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `/api/trips/${encodeURIComponent(tripId)}/booking-details`,
+      { method: "GET", cache: "no-store" },
+    );
+    if (!response.ok) return;
+    const booking = (await response.json()) as BookingDetails;
+    attach(booking);
+  } catch {
+    // Network blips during Realtime are common; the next morph retries.
+  }
+}
+
 export type UseChatStreamOptions = {
   endpoint?: string;
   /**
@@ -322,9 +350,22 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             filter: `trip_id=eq.${pendingTripId}`,
           },
           (payload: { new: Record<string, unknown> }) => {
-            const next = payload.new as { status?: string };
+            const next = payload.new as {
+              status?: string;
+              duffel_order_id?: string | null;
+            };
             if (next.status === "paid") {
               markCheckoutPaid(pendingTripId);
+            }
+            // M2-bis Plan B hydration — when the post-Checkout chain
+            // succeeds, the webhook handler writes `duffel_order_id`
+            // (UPDATE with `IS NULL` guard, so this fires exactly once
+            // per booking even if Stripe retries the webhook). Fetch
+            // the BookingConfirmationCard payload and morph the chat
+            // message in-place so the user sees PNR + flight legs +
+            // PDF download without a refresh.
+            if (next.duffel_order_id) {
+              void fetchAndAttachBooking(pendingTripId, attachBooking);
             }
           },
         )
@@ -343,7 +384,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       // websocket close runs async on the supabase-js side.
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [pendingTripId, markCheckoutPaid]);
+  }, [pendingTripId, markCheckoutPaid, attachBooking]);
 
   const send = useCallback(
     async (userText: string) => {

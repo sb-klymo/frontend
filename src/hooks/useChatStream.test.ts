@@ -784,4 +784,155 @@ describe("useChatStream", () => {
       );
     });
   });
+
+  // ---------------------------------------------------------------
+  // M2-bis Plan B — Realtime morph hydrates the BookingConfirmationCard
+  // ---------------------------------------------------------------
+  //
+  // After the Stripe Checkout payment lands, the post-Checkout chain
+  // (M2-bis) writes `duffel_order_id` to the transactions row. The
+  // existing Realtime channel sees the UPDATE; the hook then fetches
+  // `/api/trips/{trip_id}/booking-details` and morphs the latest
+  // assistant message in place — same shape as the K1 SSE
+  // `event: booking` frame, so ChatWindow renders the
+  // BookingConfirmationCard with PNR + flight legs + PDF download.
+  //
+  // We exercise the path by capturing the postgres_changes handler
+  // (already done by the existing setup) and dispatching a payload
+  // with `duffel_order_id` set.
+
+  function bookingDetailsFixture(
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      trip_id: "tr-plan-b-1",
+      booking_reference: "PNRPLB123",
+      passenger_name: "Jean Dupont",
+      amount_cents: 52_000,
+      currency: "EUR",
+      legs: [
+        {
+          origin_iata: "ORY",
+          destination_iata: "MRS",
+          departure_iso: "2026-06-02T08:00:00",
+          arrival_iso: "2026-06-02T10:15:00",
+          airline_name: "Air Stub",
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("attaches BookingDetails when duffel_order_id morphs in", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          checkoutLinkFrame({ trip_id: "tr-plan-b-1" }),
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(bookingDetailsFixture()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+
+    expect(lastPostgresChangesHandler).toBeTruthy();
+    await act(async () => {
+      // Webhook handler writes both fields atomically; mirror that
+      // payload shape so the test exercises the real morph.
+      lastPostgresChangesHandler!({
+        new: { status: "paid", duffel_order_id: "ord_test_plan_b" },
+      });
+      // Settle the fetchAndAttachBooking microtask so the booking
+      // attaches before the assertions run.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // BFF route is the second fetch; it's same-origin (relative URL).
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      "/api/trips/tr-plan-b-1/booking-details",
+      expect.objectContaining({ method: "GET", cache: "no-store" }),
+    );
+
+    await waitFor(() => {
+      const last = result.current.messages.findLast((m) => m.role === "assistant");
+      expect(last?.booking?.booking_reference).toBe("PNRPLB123");
+      expect(last?.booking?.legs).toHaveLength(1);
+      expect(last?.booking?.legs[0]?.origin_iata).toBe("ORY");
+    });
+  });
+
+  it("does not attach booking when fetch fails (409 ticket_not_ready)", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          checkoutLinkFrame({ trip_id: "tr-plan-b-409" }),
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ code: "ticket_not_ready", message: "Booking not yet completed" }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+
+    await act(async () => {
+      lastPostgresChangesHandler!({
+        new: { status: "paid", duffel_order_id: "ord_test_plan_b_409" },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The card flipped to paid (existing M2 morph), but no booking
+    // attached (server says it's not ready yet — frontend will retry
+    // on the next morph rather than render an empty card).
+    const last = result.current.messages.findLast((m) => m.role === "assistant");
+    expect(last?.checkoutLink?.paid).toBe(true);
+    expect(last?.booking).toBeUndefined();
+  });
+
+  it("ignores duffel_order_id morph when payload lacks it (M2 paid-only event)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-plan-b-no-order" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+
+    const fetchCallsBefore = fetchSpy.mock.calls.length;
+    await act(async () => {
+      // The first webhook (`checkout.session.completed`) flips status
+      // to 'paid' but doesn't write duffel_order_id yet — that comes
+      // later when the M2-bis chain finishes. Ensure we don't fetch
+      // booking-details prematurely on every "paid" UPDATE.
+      lastPostgresChangesHandler!({ new: { status: "paid" } });
+      await Promise.resolve();
+    });
+
+    expect(fetchSpy.mock.calls.length).toBe(fetchCallsBefore);
+  });
 });
