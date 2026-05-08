@@ -21,11 +21,25 @@ type SearchParams = { trip?: string; lang?: string };
 
 type TransactionStatus = {
   trip_id: string;
-  status: "pending" | "requires_action" | "paid" | "failed" | "canceled";
+  status:
+    | "pending"
+    | "requires_action"
+    | "paid"
+    | "failed"
+    | "canceled"
+    | "refunded";
   amount_cents: number | null;
   currency: string | null;
   booking_reference: string | null;
 };
+
+// Tagged result so the page can distinguish "no row" (404) from "backend
+// hiccup" (5xx / network) and render different copy. Returning a bare
+// `null` for both used to surface "Transaction not found" even when the
+// backend was 500'ing — confusing to users and to debugging.
+type FetchResult =
+  | { ok: true; data: TransactionStatus }
+  | { ok: false; reason: "not_found" | "server_error" };
 
 export default async function PaymentSuccessPage({
   searchParams,
@@ -42,16 +56,73 @@ export default async function PaymentSuccessPage({
   const language: SupportedLanguage = lang === "fr" ? "fr" : "en";
   const t = strings(language).paymentSuccess;
 
-  let txn: TransactionStatus | null = null;
-  if (trip) {
-    txn = await fetchTransactionStatus(trip);
-  }
+  const result: FetchResult = trip
+    ? await fetchTransactionStatus(trip)
+    : { ok: false, reason: "not_found" };
 
-  if (!txn) {
+  if (!result.ok) {
+    const title = result.reason === "server_error" ? t.serverErrorTitle : t.notFoundTitle;
+    const subtitle =
+      result.reason === "server_error" ? t.serverErrorSubtitle : t.notFoundSubtitle;
+    const testId =
+      result.reason === "server_error"
+        ? "payment-success-server-error"
+        : "payment-success-not-found";
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-gray-900">{t.notFoundTitle}</h1>
-        <p className="mt-2 text-sm text-gray-600">{t.notFoundSubtitle}</p>
+        <h1
+          className="text-xl font-semibold text-gray-900"
+          data-testid={testId}
+        >
+          {title}
+        </h1>
+        <p className="mt-2 text-sm text-gray-600">{subtitle}</p>
+        <ReturnToChatNote text={t.returnToChatNote} />
+      </Shell>
+    );
+  }
+
+  const txn = result.data;
+  const isRefunded = txn.status === "refunded";
+
+  // Refunded = the post-payment Duffel chain failed and PR 6's safety
+  // net reversed the charge. The user sees a distinct gray panel with
+  // explicit copy ("you've been refunded") instead of the green ✓
+  // success card, since landing on the success URL after a refund
+  // would otherwise be misleading.
+  if (isRefunded) {
+    return (
+      <Shell>
+        <div
+          className="rounded-lg border border-gray-300 bg-gray-50 p-4"
+          data-testid="payment-success-refunded-card"
+        >
+          <h1 className="text-lg font-semibold text-gray-900">{t.refundedTitle}</h1>
+          <p className="mt-1 text-sm text-gray-700">{t.refundedSubtitle}</p>
+
+          <dl className="mt-4 space-y-2 text-sm text-gray-800">
+            {txn.amount_cents !== null && txn.currency && (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-gray-500">{t.refundedAmountLabel}</dt>
+                <dd
+                  className="font-semibold"
+                  data-testid="payment-success-refunded-amount"
+                >
+                  {formatAmount(txn.amount_cents, txn.currency, language)}
+                </dd>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-gray-500">{t.statusLabel}</dt>
+              <dd
+                className="font-mono text-xs uppercase"
+                data-testid="payment-success-status"
+              >
+                {txn.status}
+              </dd>
+            </div>
+          </dl>
+        </div>
         <ReturnToChatNote text={t.returnToChatNote} />
       </Shell>
     );
@@ -112,9 +183,7 @@ export default async function PaymentSuccessPage({
   );
 }
 
-async function fetchTransactionStatus(
-  tripId: string,
-): Promise<TransactionStatus | null> {
+async function fetchTransactionStatus(tripId: string): Promise<FetchResult> {
   // Same-origin BFF call — the route handler attaches the JWT
   // server-side. Using the absolute URL via headers().host is
   // fragile in Next 16 RSC; same-origin relative is fine inside
@@ -123,10 +192,10 @@ async function fetchTransactionStatus(
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session) return null;
+  if (!session) return { ok: false, reason: "server_error" };
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!backendUrl) return null;
+  if (!backendUrl) return { ok: false, reason: "server_error" };
 
   try {
     const response = await fetch(
@@ -136,10 +205,12 @@ async function fetchTransactionStatus(
         cache: "no-store",
       },
     );
-    if (!response.ok) return null;
-    return (await response.json()) as TransactionStatus;
+    if (response.status === 404) return { ok: false, reason: "not_found" };
+    if (!response.ok) return { ok: false, reason: "server_error" };
+    const data = (await response.json()) as TransactionStatus;
+    return { ok: true, data };
   } catch {
-    return null;
+    return { ok: false, reason: "server_error" };
   }
 }
 
