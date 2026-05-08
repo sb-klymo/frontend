@@ -28,6 +28,7 @@ import {
 } from "@/lib/policy-presets";
 
 import { IssuingCardsSection } from "./IssuingCardsSection";
+import { PaymentStatusSection } from "./PaymentStatusSection";
 
 // ---------------------------------------------------------------------------
 // Collapsed-section persistence (localStorage).
@@ -197,6 +198,12 @@ export function DevPanel({
           onRandom={handleRandom}
           onReset={reset}
           isStreaming={isStreaming}
+        />
+
+        <PaymentStatusSection
+          language={promptLang}
+          open={isOpen("payment-status")}
+          onToggle={() => toggle("payment-status")}
         />
 
         <PaymentSection
