@@ -50,6 +50,21 @@ export type BookingDetails = {
 };
 
 /**
+ * L3 cancellation surfaced via `event: cancellation`. Emitted when the
+ * user cancelled a confirmed booking and the Stripe refund + DB
+ * updates completed (see backend `_project_cancellation_event`). The
+ * frontend renders a `CancellationCard` with the refund amount, PNR,
+ * and a deep-link to the Stripe refund record.
+ */
+export type CancellationDetails = {
+  trip_id: string;
+  booking_reference: string;
+  refund_id: string;
+  amount_cents: number;
+  currency: string;
+};
+
+/**
  * Stripe Checkout link surfaced via `event: checkout_link` (M2). Fired
  * for users on payment modes 2 (`checkout_opt_in`) and 3
  * (`checkout_fallback`) when the agent reaches a billable offer — the
@@ -114,6 +129,14 @@ export type ChatMessage = {
    * CheckoutPaymentCard instead of the plain text bubble.
    */
   checkoutLink?: CheckoutLinkDetails;
+  /**
+   * Cancellation receipt attached via the `event: cancellation` SSE
+   * frame (L3). When present, the renderer shows the
+   * `CancellationCard` (gray, with refund + PNR). Takes precedence
+   * over `booking` / `checkoutLink` in ChatWindow — a cancelled
+   * booking should never display as a confirmed-and-payable card.
+   */
+  cancellation?: CancellationDetails;
 };
 
 type ServerEvent =
@@ -128,6 +151,14 @@ type ServerEvent =
     }
   | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[] }
   | { type: "checkout_link"; trip_id: string; checkout_url: string; amount_cents: number; currency: string }
+  | {
+      type: "cancellation";
+      trip_id: string;
+      booking_reference: string;
+      refund_id: string;
+      amount_cents: number;
+      currency: string;
+    }
   | { type: "done"; workflow_stage: string | null; conversation_id: string }
   | { type: "error"; code: string; message: string };
 
@@ -362,6 +393,22 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
+  const attachCancellation = useCallback((cancellation: CancellationDetails) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        // Same turn as the cancel ack text — augment the assistant
+        // message so the renderer shows the CancellationCard instead
+        // of (or in addition to) the rephrased text bubble.
+        return [...prev.slice(0, -1), { ...last, cancellation }];
+      }
+      return [
+        ...prev,
+        { id: randomId(), role: "assistant", content: "", cancellation },
+      ];
+    });
+  }, []);
+
   // M2-H3 — auto-morph the CheckoutPaymentCard from "pending" to
   // "paid" when the Stripe webhook fires. We subscribe to Supabase
   // Realtime on `public.transactions` filtered by the most recent
@@ -571,6 +618,15 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   currency: event.currency,
                 });
                 break;
+              case "cancellation":
+                attachCancellation({
+                  trip_id: event.trip_id,
+                  booking_reference: event.booking_reference,
+                  refund_id: event.refund_id,
+                  amount_cents: event.amount_cents,
+                  currency: event.currency,
+                });
+                break;
               case "done":
                 setConversationId(event.conversation_id);
                 setWorkflowStage(event.workflow_stage);
@@ -635,6 +691,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       attachOffers,
       attachBooking,
       attachCheckoutLink,
+      attachCancellation,
     ],
   );
 

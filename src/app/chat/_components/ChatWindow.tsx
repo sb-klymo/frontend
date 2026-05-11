@@ -7,6 +7,7 @@ import type { SupportedLanguage } from "@/lib/i18n";
 import { useChatStore } from "@/stores/chatStore";
 
 import { BookingConfirmationCard } from "./BookingConfirmationCard";
+import { CancellationCard } from "./CancellationCard";
 import { CheckoutPaymentCard } from "./CheckoutPaymentCard";
 import { OptionList } from "./OptionList";
 
@@ -57,6 +58,19 @@ export function ChatWindow({
           <EmptyState />
         ) : (
           messages.map((m) => {
+            if (m.cancellation) {
+              // L3 — user cancelled a confirmed booking. Outranks
+              // `booking` and `checkoutLink` because a cancelled trip
+              // must never display as confirmed-and-payable. The
+              // cancel acknowledgement is the final state.
+              return (
+                <CancellationCard
+                  key={m.id}
+                  cancellation={m.cancellation}
+                  language={language}
+                />
+              );
+            }
             if (m.booking) {
               // K1 (SSE event:booking) and Plan B / M2-bis (Realtime
               // morph → /api/trips/{id}/booking-details) both land
