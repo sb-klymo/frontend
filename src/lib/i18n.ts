@@ -65,6 +65,13 @@ type Strings = {
     downloadLabel: string;
     emailNote: string;
   };
+  cancellationCard: {
+    title: string;
+    bookingReferenceLabel: string;
+    refundLabel: string;
+    refundIdLabel: string;
+    receiptNote: string;
+  };
   checkoutCard: {
     title: string;
     amountLabel: string;
@@ -122,6 +129,13 @@ const EN: Strings = {
     totalLabel: "Total charged",
     downloadLabel: "↓ Download ticket",
     emailNote: "A copy is on its way to your inbox.",
+  },
+  cancellationCard: {
+    title: "Booking cancelled",
+    bookingReferenceLabel: "Booking reference",
+    refundLabel: "Refunded",
+    refundIdLabel: "Refund ID",
+    receiptNote: "The refund will land on your card in 5-10 business days.",
   },
   checkoutCard: {
     title: "Complete your booking",
@@ -188,6 +202,13 @@ const FR: Strings = {
     totalLabel: "Total prélevé",
     downloadLabel: "↓ Télécharger le billet",
     emailNote: "Une copie arrive dans votre boîte mail.",
+  },
+  cancellationCard: {
+    title: "Réservation annulée",
+    bookingReferenceLabel: "Référence",
+    refundLabel: "Remboursé",
+    refundIdLabel: "ID remboursement",
+    receiptNote: "Le remboursement apparaîtra sur votre carte sous 5-10 jours ouvrés.",
   },
   checkoutCard: {
     title: "Finalisez votre réservation",
