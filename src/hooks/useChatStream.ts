@@ -94,6 +94,15 @@ export type ChatMessage = {
    */
   offers?: DisplayedOffer[];
   /**
+   * Optional rephrased header / footer for the option list, populated by
+   * the backend `phrase()` helper with the user's conversation context
+   * (so it varies across turns and references what the user asked for).
+   * Frontend renders these when present, falls back to the static i18n
+   * strings otherwise — fallback covers no-API-key dev / LLM error.
+   */
+  optionsHeader?: string;
+  optionsFooter?: string;
+  /**
    * Structured booking confirmation attached via the `event: booking`
    * SSE frame. When present, the renderer shows the
    * BookingConfirmationCard instead of the plain text bubble.
@@ -110,7 +119,13 @@ export type ChatMessage = {
 type ServerEvent =
   | { type: "start"; conversation_id: string }
   | { type: "message"; content: string; node?: string }
-  | { type: "options"; offers: DisplayedOffer[]; node?: string }
+  | {
+      type: "options";
+      offers: DisplayedOffer[];
+      header?: string;
+      footer?: string;
+      node?: string;
+    }
   | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[] }
   | { type: "checkout_link"; trip_id: string; checkout_url: string; amount_cents: number; currency: string }
   | { type: "done"; workflow_stage: string | null; conversation_id: string }
@@ -236,23 +251,44 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
-  const attachOffers = useCallback((offers: DisplayedOffer[]) => {
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last?.role === "assistant") {
-        // Same turn — augment the assistant message with the structured
-        // offers so the renderer can show OptionCards for it.
-        return [...prev.slice(0, -1), { ...last, offers }];
-      }
-      // Defensive: options arrived without a preceding message (shouldn't
-      // happen with the current backend, but if the order ever flips we
-      // stash them on a fresh assistant turn so the UI renders cleanly).
-      return [
-        ...prev,
-        { id: randomId(), role: "assistant", content: "", offers },
-      ];
-    });
-  }, []);
+  const attachOffers = useCallback(
+    (
+      offers: DisplayedOffer[],
+      optionsHeader?: string,
+      optionsFooter?: string,
+    ) => {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant") {
+          // Same turn — augment the assistant message with the structured
+          // offers so the renderer can show OptionCards for it. Header /
+          // footer come from the backend `phrase()` rephraser when an
+          // API key is configured; absent when the rephraser fell back
+          // (i18n defaults take over in OptionList).
+          return [
+            ...prev.slice(0, -1),
+            { ...last, offers, optionsHeader, optionsFooter },
+          ];
+        }
+        // Defensive: options arrived without a preceding message
+        // (shouldn't happen with the current backend, but if the order
+        // ever flips we stash them on a fresh assistant turn so the
+        // UI renders cleanly).
+        return [
+          ...prev,
+          {
+            id: randomId(),
+            role: "assistant",
+            content: "",
+            offers,
+            optionsHeader,
+            optionsFooter,
+          },
+        ];
+      });
+    },
+    [],
+  );
 
   const markCheckoutPaid = useCallback((tripId: string) => {
     // Patch `paid: true` on the message whose checkoutLink matches.
@@ -515,7 +551,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 appendAssistantChunk(event.content);
                 break;
               case "options":
-                attachOffers(event.offers);
+                attachOffers(event.offers, event.header, event.footer);
                 break;
               case "booking":
                 attachBooking({

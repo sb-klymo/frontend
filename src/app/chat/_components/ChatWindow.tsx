@@ -91,7 +91,15 @@ export function ChatWindow({
             if (m.offers) {
               // Structured offers replace the redundant text bubble — the
               // OptionList carries the same info more cleanly.
-              return <OptionList key={m.id} offers={m.offers} language={language} />;
+              return (
+                <OptionList
+                  key={m.id}
+                  offers={m.offers}
+                  language={language}
+                  header={m.optionsHeader}
+                  footer={m.optionsFooter}
+                />
+              );
             }
             return (
               <Bubble key={m.id} role={m.role} content={m.content} streaming={false} />
