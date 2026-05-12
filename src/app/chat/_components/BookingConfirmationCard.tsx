@@ -90,6 +90,13 @@ export function BookingConfirmationCard({
       </a>
 
       <p className="mt-2 text-[11px] text-gray-500">{t.emailNote}</p>
+
+      <p
+        className="mt-3 border-t border-emerald-200 pt-3 text-xs text-gray-700"
+        data-testid="booking-follow-up"
+      >
+        {t.followUp}
+      </p>
     </div>
   );
 }

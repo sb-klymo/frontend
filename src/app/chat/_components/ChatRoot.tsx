@@ -55,6 +55,7 @@ export function ChatRoot() {
         error={stream.error}
         isStreaming={stream.isStreaming}
         language={stream.language}
+        workflowStage={stream.workflowStage}
         send={stream.send}
         stop={stream.stop}
         reset={stream.reset}

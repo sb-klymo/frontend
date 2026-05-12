@@ -64,6 +64,13 @@ type Strings = {
     totalLabel: string;
     downloadLabel: string;
     emailNote: string;
+    followUp: string;
+  };
+  typingIndicator: {
+    thinking: string;
+    searching: string;
+    presenting: string;
+    booking: string;
   };
   cancellationCard: {
     title: string;
@@ -129,6 +136,7 @@ const EN: Strings = {
     totalLabel: "Total charged",
     downloadLabel: "↓ Download ticket",
     emailNote: "A copy is on its way to your inbox.",
+    followUp: "Ready for the next trip? Just ask.",
   },
   cancellationCard: {
     title: "Booking cancelled",
@@ -176,6 +184,12 @@ const EN: Strings = {
     returnToChatNote:
       "You can close this tab — your chat is still open in the original window.",
   },
+  typingIndicator: {
+    thinking: "Thinking…",
+    searching: "Searching flights…",
+    presenting: "Pulling the options together…",
+    booking: "Finalizing your booking…",
+  },
 };
 
 const FR: Strings = {
@@ -202,6 +216,7 @@ const FR: Strings = {
     totalLabel: "Total prélevé",
     downloadLabel: "↓ Télécharger le billet",
     emailNote: "Une copie arrive dans votre boîte mail.",
+    followUp: "Prêt pour le prochain voyage ? Dites-moi.",
   },
   cancellationCard: {
     title: "Réservation annulée",
@@ -247,6 +262,12 @@ const FR: Strings = {
     subtitle: "Aucun montant n'a été prélevé. Vous pouvez réessayer depuis le chat.",
     returnToChatNote:
       "Vous pouvez fermer cet onglet — votre chat est toujours ouvert dans la fenêtre d'origine.",
+  },
+  typingIndicator: {
+    thinking: "Réflexion en cours…",
+    searching: "Recherche des vols…",
+    presenting: "Préparation des options…",
+    booking: "Finalisation de la réservation…",
   },
 };
 
