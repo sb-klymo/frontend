@@ -63,8 +63,6 @@ type Strings = {
     flightLabel: string;
     totalLabel: string;
     downloadLabel: string;
-    emailNote: string;
-    followUp: string;
   };
   typingIndicator: {
     thinking: string;
@@ -135,8 +133,6 @@ const EN: Strings = {
     flightLabel: "Flight",
     totalLabel: "Total charged",
     downloadLabel: "↓ Download ticket",
-    emailNote: "A copy is on its way to your inbox.",
-    followUp: "Ready for the next trip? Just ask.",
   },
   cancellationCard: {
     title: "Booking cancelled",
@@ -215,8 +211,6 @@ const FR: Strings = {
     flightLabel: "Vol",
     totalLabel: "Total prélevé",
     downloadLabel: "↓ Télécharger le billet",
-    emailNote: "Une copie arrive dans votre boîte mail.",
-    followUp: "Prêt pour le prochain voyage ? Dites-moi.",
   },
   cancellationCard: {
     title: "Réservation annulée",

@@ -96,19 +96,21 @@ describe("BookingConfirmationCard", () => {
     expect(total).toMatch(/450/);
   });
 
-  it("renders the conversational follow-up under the email note (EN)", () => {
+  it("does not render the email-note or follow-up text in the card (2026-05-12 voice rework moved both lines into the chat bubble emitted by checkout_node)", () => {
     render(<BookingConfirmationCard booking={_booking()} language="en" />);
-    const followUp = screen.getByTestId("booking-follow-up");
-    // Pin the EN string verbatim — it's the post-booking chat warmth
-    // the bot used to be missing (it stopped at the card alone, no
-    // closing line, which felt cold).
-    expect(followUp.textContent).toBe("Ready for the next trip? Just ask.");
+    // Both lines used to live on the card. As of the voice rework
+    // they are emitted by the backend as a chat AIMessage (via the
+    // booking-confirmed seed pool in checkout_node), so the card
+    // must NOT render them anymore. Same for FR.
+    expect(screen.queryByTestId("booking-follow-up")).toBeNull();
+    expect(screen.queryByText(/copy is on its way/i)).toBeNull();
+    expect(screen.queryByText(/Ready for the next trip/i)).toBeNull();
   });
 
-  it("localizes the follow-up to French", () => {
+  it("does not render the email-note or follow-up text in the card (FR)", () => {
     render(<BookingConfirmationCard booking={_booking()} language="fr" />);
-    expect(screen.getByTestId("booking-follow-up").textContent).toBe(
-      "Prêt pour le prochain voyage ? Dites-moi.",
-    );
+    expect(screen.queryByTestId("booking-follow-up")).toBeNull();
+    expect(screen.queryByText(/copie arrive/i)).toBeNull();
+    expect(screen.queryByText(/Prêt pour le prochain voyage/i)).toBeNull();
   });
 });

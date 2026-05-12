@@ -88,15 +88,13 @@ export function BookingConfirmationCard({
       >
         {t.downloadLabel}
       </a>
-
-      <p className="mt-2 text-[11px] text-gray-500">{t.emailNote}</p>
-
-      <p
-        className="mt-3 border-t border-emerald-200 pt-3 text-xs text-gray-700"
-        data-testid="booking-follow-up"
-      >
-        {t.followUp}
-      </p>
+      {/* "A copy is on its way to your inbox" + "Ready for the next
+          trip? Just ask." used to live here as static text. As of the
+          2026-05-12 voice rework, both lines are emitted by checkout_node
+          as a chat message (via the booking-confirmed seed pool) so
+          they read in the user's language with Klymo's voice and vary
+          across bookings. The card stays focused on the structured
+          data: ref, amount, legs, download. */}
     </div>
   );
 }
