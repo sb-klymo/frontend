@@ -230,26 +230,42 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   // get nuked when the `event: booking` arrives and the rich card
   // replaces it — a jarring "type then delete" flicker.
   //
-  // Strategy:
+  // Strategy (post-2026-05-12 voice rework):
   //   * On send, if the previous turn ended at `awaiting_*_selection`,
   //     we know this turn is the user picking — likely heading to
   //     `checkout_ready` → `completed`. Mark the turn as buffering.
-  //   * While buffering, message chunks accumulate in `bufferedTextRef`
-  //     and DON'T touch `messages` — so no assistant bubble shows yet
-  //     (the existing typing-dots fallback in <ChatWindow> kicks in
-  //     because there's no assistant message to render).
-  //   * When `event: booking` arrives, the card lands as the assistant
-  //     message and the buffered text is discarded — the card is the
-  //     message.
-  //   * When `event: done` arrives WITHOUT a booking attached
+  //   * While buffering, message chunks accumulate in PER-NODE buffers
+  //     (`select` vs `checkout`) so the flush logic can treat them
+  //     differently. Nothing renders yet — typing-dots fallback in
+  //     <ChatWindow> covers the gap.
+  //   * When `event: booking` (or `event: checkout_link`) arrives, the
+  //     card lands as the assistant message. The select_node text
+  //     ("Got it, option 2 at 12:00, locking that in...") is DISCARDED
+  //     because it duplicates the card. The checkout_node text (the
+  //     warm seed-pool output: "Copy on its way to your inbox. Ready
+  //     for next trip?") is flushed as a SEPARATE assistant message
+  //     RIGHT AFTER the card. Sequential render = no flicker, and the
+  //     conversational close lands where the user can read it.
+  //   * When `event: done` arrives WITHOUT a card attached
   //     (round-trip stage 1, blocked option, K1 failure path), the
-  //     buffered text is flushed into a normal text bubble so the
-  //     user sees the response — no information lost.
+  //     buffered text is flushed into the existing bubble. Checkout
+  //     buffer takes precedence over select (failure messages from
+  //     checkout_node matter more than the redundant select ack);
+  //     select buffer is used in the round-trip stage-1 case where
+  //     only select_node emitted ("Departure locked, pick a return").
   //
   // Refs (not state) so updates inside the streaming loop don't trigger
   // re-renders or fight the React 18+ batched updater.
   const bufferingTurnRef = useRef(false);
-  const bufferedTextRef = useRef("");
+  const bufferedSelectTextRef = useRef("");
+  const bufferedCheckoutTextRef = useRef("");
+  // Fallback bucket for buffered chunks whose node tag isn't in the
+  // `select` / `checkout` set. Shouldn't fire under current backend
+  // routing (only those two nodes stream during a selection turn), but
+  // a future graph that adds, say, a `confirm_email` token stream
+  // mid-selection-turn would land here and the flush logic still
+  // surfaces the text rather than silently dropping it.
+  const bufferedOtherTextRef = useRef("");
   // Mirror of `workflowStage` — read at send-time without putting
   // workflowStage on `send`'s useCallback deps (which would recreate
   // `send` every turn and tear down a fresh AbortController each time).
@@ -264,12 +280,22 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     workflowStageRef.current = workflowStage;
   }, [workflowStage]);
 
-  const appendAssistantChunk = useCallback((content: string) => {
-    // Selection-turn tokens go to the invisible buffer instead of an
-    // on-screen bubble. The booking event (or `done` fallback) decides
-    // what becomes visible. See bufferingTurnRef block above.
+  const appendAssistantChunk = useCallback((content: string, node?: string) => {
+    // Selection-turn tokens go to PER-NODE invisible buffers instead of
+    // an on-screen bubble. The booking event (or `done` fallback)
+    // decides what becomes visible. Splitting by node lets the flush
+    // logic discard the redundant select_node ack ("Got it, option 2")
+    // while surfacing the warm checkout_node close ("Copy on its way,
+    // ready for next trip?") as a separate bubble after the card.
+    // See bufferingTurnRef block above for the full strategy.
     if (bufferingTurnRef.current) {
-      bufferedTextRef.current += content;
+      if (node === "checkout") {
+        bufferedCheckoutTextRef.current += content;
+      } else if (node === "select") {
+        bufferedSelectTextRef.current += content;
+      } else {
+        bufferedOtherTextRef.current += content;
+      }
       return;
     }
     setMessages((prev) => {
@@ -545,7 +571,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       bufferingTurnRef.current =
         stage === "awaiting_departure_selection" ||
         stage === "awaiting_return_selection";
-      bufferedTextRef.current = "";
+      bufferedSelectTextRef.current = "";
+      bufferedCheckoutTextRef.current = "";
+      bufferedOtherTextRef.current = "";
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -595,7 +623,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 setConversationId(event.conversation_id);
                 break;
               case "message":
-                appendAssistantChunk(event.content);
+                appendAssistantChunk(event.content, event.node);
                 break;
               case "options":
                 attachOffers(event.offers, event.header, event.footer);
@@ -630,41 +658,66 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               case "done":
                 setConversationId(event.conversation_id);
                 setWorkflowStage(event.workflow_stage);
-                // Flush buffered text if this was a buffered turn AND
-                // no booking event arrived to take its place. Common
-                // cases: round-trip stage 1 ("Departure locked, pick a
-                // return"), blocked option, K1 chain failure path —
-                // each emits text the user must see.
+                // Flush per-node buffers if this was a buffered turn.
+                // Three cases handled below:
+                //   1. A card landed (booking or checkout_link) — flush
+                //      ONLY the checkout_node text as a NEW assistant
+                //      message right after the card. Drop the
+                //      select_node ack ("Got it, option 2 at 12:00…")
+                //      since the card already says all that.
+                //   2. No card landed AND we have checkout_node text
+                //      (K1 failure path: "Hmm, your card was
+                //      declined…") — flush that into the existing
+                //      bubble. Failure messages from checkout matter
+                //      more than the duplicate select ack.
+                //   3. No card landed AND we only have select_node
+                //      text (round-trip stage 1: "Got the 8:00 flight,
+                //      now pick a return") — flush that into the
+                //      existing bubble.
                 if (bufferingTurnRef.current) {
-                  const buffered = bufferedTextRef.current;
+                  const checkoutText = bufferedCheckoutTextRef.current;
+                  const selectText = bufferedSelectTextRef.current;
+                  const otherText = bufferedOtherTextRef.current;
                   bufferingTurnRef.current = false;
-                  bufferedTextRef.current = "";
-                  if (buffered) {
-                    setMessages((prev) => {
-                      const last = prev[prev.length - 1];
-                      // If a booking or checkout-link card already
-                      // landed, the card is the message — discard the
-                      // buffered text so it doesn't leak underneath.
-                      if (
-                        last?.role === "assistant" &&
-                        (last.booking || last.checkoutLink)
-                      ) {
-                        return prev;
-                      }
-                      // Otherwise materialise the buffered text as a
-                      // normal assistant bubble.
-                      if (last?.role === "assistant") {
+                  bufferedCheckoutTextRef.current = "";
+                  bufferedSelectTextRef.current = "";
+                  bufferedOtherTextRef.current = "";
+                  setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    const hasCard =
+                      last?.role === "assistant" && (last.booking || last.checkoutLink);
+                    // Case 1 — a card landed. Append checkout text as
+                    // a fresh bubble BELOW the card. Card stays the
+                    // headline, bubble carries the bot's conversational
+                    // close (warm seed-pool output: "Copy on its way,
+                    // ready for next trip?"). select_node text is
+                    // dropped — it's redundant with the card.
+                    if (hasCard) {
+                      if (checkoutText) {
                         return [
-                          ...prev.slice(0, -1),
-                          { ...last, content: last.content + buffered },
+                          ...prev,
+                          { id: randomId(), role: "assistant", content: checkoutText },
                         ];
                       }
+                      return prev;
+                    }
+                    // Cases 2 + 3 — no card. Prefer checkout > select
+                    // > other so failure messages and stage-2 prompts
+                    // surface cleanly. Concatenated into the last
+                    // assistant bubble if present, else new bubble.
+                    const content = checkoutText || selectText || otherText;
+                    if (!content) return prev;
+                    if (last?.role === "assistant") {
                       return [
-                        ...prev,
-                        { id: randomId(), role: "assistant", content: buffered },
+                        ...prev.slice(0, -1),
+                        { ...last, content: last.content + content },
                       ];
-                    });
-                  }
+                    }
+                    return [
+                      ...prev,
+                      { id: randomId(), role: "assistant", content },
+                    ];
+                  });
                 }
                 break;
               case "error":

@@ -367,11 +367,14 @@ describe("useChatStream", () => {
     );
   }
 
-  it("buffers select+checkout text when previous turn was a selection (booking lands)", async () => {
+  it("buffers select+checkout text when previous turn was a selection (booking lands, checkout text becomes a separate bubble)", async () => {
     // Turn 1: stage transitions to `awaiting_departure_selection`.
-    // Turn 2: user picks → backend streams text → booking event fires →
-    // `done`. The streamed text MUST NOT appear in the final messages —
-    // the booking card replaces the bubble.
+    // Turn 2: user picks → backend streams select+checkout text → booking
+    // event fires → `done`. Post-2026-05-12 voice rework: select_node
+    // text ("Parfait, on part sur l'option 1") is dropped because the
+    // card already says the same thing. checkout_node text (the warm
+    // seed-pool output: "Copy on its way, ready for next trip?") is
+    // surfaced as a SEPARATE assistant message right after the card.
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         mockSseResponse([
@@ -383,7 +386,8 @@ describe("useChatStream", () => {
         mockSseResponse([
           START_FRAME,
           'event: message\ndata: {"content":"Parfait, on part sur l\'option 1.","node":"select"}\n\n',
-          'event: message\ndata: {"content":" Booked. Reference STUBABC. Total $450 USD.","node":"checkout"}\n\n',
+          'event: message\ndata: {"content":"C\'est réservé ! STUBABC, 450.00 EUR. ","node":"checkout"}\n\n',
+          'event: message\ndata: {"content":"Le billet arrive par e-mail. Prêt pour le prochain voyage ?","node":"checkout"}\n\n',
           bookingFrame(),
           'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"completed"}\n\n',
         ]),
@@ -396,19 +400,29 @@ describe("useChatStream", () => {
     });
     expect(result.current.workflowStage).toBe("awaiting_departure_selection");
 
-    // Turn 2 — user picks. Streamed text is buffered, card replaces bubble.
+    // Turn 2 — user picks.
     await act(async () => {
       await result.current.send("option 1");
     });
 
-    const lastAssistant = result.current.messages.findLast(
+    const assistantMessages = result.current.messages.filter(
       (m) => m.role === "assistant",
     );
-    // The card landed on this assistant message…
-    expect(lastAssistant?.booking).toBeDefined();
-    expect(lastAssistant?.booking?.booking_reference).toBe("STUBABC");
-    // …and the streamed text was suppressed (no flicker).
-    expect(lastAssistant?.content).toBe("");
+    // Two-bubble shape: card bubble, then warmth bubble.
+    expect(assistantMessages.length).toBeGreaterThanOrEqual(2);
+    const cardBubble = assistantMessages.find((m) => m.booking !== undefined);
+    expect(cardBubble?.booking?.booking_reference).toBe("STUBABC");
+    // Card bubble itself has no leaked select_node text content.
+    expect(cardBubble?.content).toBe("");
+
+    // The last assistant message is the warm checkout-node close,
+    // landed as a separate bubble AFTER the card. select_node ack
+    // ("Parfait, on part sur l'option 1") was dropped — only the
+    // checkout-node text survives.
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    expect(lastAssistant?.booking).toBeUndefined();
+    expect(lastAssistant?.content).toContain("Le billet arrive par e-mail");
+    expect(lastAssistant?.content).not.toContain("Parfait, on part sur l'option 1");
   });
 
   it("flushes buffered text as a bubble when no booking arrives (round-trip stage 1)", async () => {
@@ -469,10 +483,11 @@ describe("useChatStream", () => {
     expect(lastAssistant?.content).toBe("Where would you like to go?");
   });
 
-  it("does not flush buffered text when booking event already attached the card", async () => {
-    // Defensive: even if backend ALSO sends streamed text after the
-    // booking event (it shouldn't, but might), the card stays the
-    // message — no buffered text leaks back into the bubble.
+  it("card bubble has empty content; checkout text lands as separate bubble after it", async () => {
+    // Two-bubble invariant on the booking-success path: the card
+    // bubble's `content` MUST be empty (no text leaks underneath the
+    // card), and the checkout_node warm close lands as its own
+    // subsequent bubble. Pins the card-vs-text separation.
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         mockSseResponse([
@@ -497,12 +512,17 @@ describe("useChatStream", () => {
       await result.current.send("option 1");
     });
 
-    const lastAssistant = result.current.messages.findLast(
+    const assistantMessages = result.current.messages.filter(
       (m) => m.role === "assistant",
     );
-    expect(lastAssistant?.booking).toBeDefined();
-    // Buffered "Booking now…" is gone — the card is the message.
-    expect(lastAssistant?.content).toBe("");
+    const cardBubble = assistantMessages.find((m) => m.booking !== undefined);
+    expect(cardBubble?.booking).toBeDefined();
+    expect(cardBubble?.content).toBe("");
+    // The last assistant message is the warm checkout text, in its
+    // own bubble below the card.
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    expect(lastAssistant?.booking).toBeUndefined();
+    expect(lastAssistant?.content).toBe("Booking now…");
   });
 
   it("picks up the latest override at send-time (mid-conversation swap)", async () => {
@@ -583,9 +603,12 @@ describe("useChatStream", () => {
     expect(lastAssistant?.checkoutLink?.currency).toBe("EUR");
   });
 
-  it("buffers select+checkout text when checkout_link lands (no flicker)", async () => {
-    // Mode 2/3 selection turn: streamed text from select_node + checkout_node
-    // must NOT appear as a bubble — the CheckoutPaymentCard replaces it.
+  it("on checkout_link, drops select text but surfaces checkout text as a separate bubble after the card", async () => {
+    // Mode 2/3 selection turn. Same two-bubble shape as the booking
+    // path: the CheckoutPaymentCard is one assistant bubble (with
+    // empty content); the checkout_node intro ("Click the link to
+    // complete your booking...") lands as a SECOND bubble after the
+    // card. select_node's "On part sur l'option 1" is dropped.
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         mockSseResponse([
@@ -613,16 +636,23 @@ describe("useChatStream", () => {
       await result.current.send("option 1");
     });
 
-    const lastAssistant = result.current.messages.findLast(
+    const assistantMessages = result.current.messages.filter(
       (m) => m.role === "assistant",
     );
-    expect(lastAssistant?.checkoutLink).toBeDefined();
-    expect(lastAssistant?.booking).toBeUndefined();
-    // Buffered streamed text was suppressed.
-    expect(lastAssistant?.content).toBe("");
+    const cardBubble = assistantMessages.find((m) => m.checkoutLink !== undefined);
+    expect(cardBubble?.checkoutLink).toBeDefined();
+    expect(cardBubble?.booking).toBeUndefined();
+    expect(cardBubble?.content).toBe("");
+    // checkout-node intro lands as the trailing bubble.
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    expect(lastAssistant?.content).toBe("Click the link to complete your booking.");
+    // select-node text was dropped.
+    expect(
+      assistantMessages.some((m) => m.content.includes("On part sur")),
+    ).toBe(false);
   });
 
-  it("does not flush buffered text when checkout_link already attached the card", async () => {
+  it("checkout_link card bubble has empty content; checkout intro lands as separate bubble after it", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         mockSseResponse([
@@ -647,12 +677,14 @@ describe("useChatStream", () => {
       await result.current.send("option 1");
     });
 
-    const lastAssistant = result.current.messages.findLast(
+    const assistantMessages = result.current.messages.filter(
       (m) => m.role === "assistant",
     );
-    expect(lastAssistant?.checkoutLink).toBeDefined();
-    // Buffered "Generating link…" is gone — the card is the message.
-    expect(lastAssistant?.content).toBe("");
+    const cardBubble = assistantMessages.find((m) => m.checkoutLink !== undefined);
+    expect(cardBubble?.checkoutLink).toBeDefined();
+    expect(cardBubble?.content).toBe("");
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    expect(lastAssistant?.content).toBe("Generating link…");
   });
 
   // -------------------------------------------------------------------------
