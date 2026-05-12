@@ -121,7 +121,7 @@ export function ChatWindow({
           })
         )}
         {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
-          <Bubble role="assistant" content="…" streaming />
+          <TypingIndicator />
         )}
       </div>
 
@@ -182,6 +182,30 @@ function EmptyState() {
         <p className="mt-1">
           Try: &ldquo;I want to fly from Paris to New York next Friday&rdquo;
         </p>
+      </div>
+    </div>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <div className="flex justify-start" data-testid="typing-indicator">
+      <div
+        role="status"
+        aria-label="Assistant is typing"
+        className="rounded-2xl bg-gray-100 px-4 py-3"
+      >
+        <div className="flex items-center gap-1">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" />
+          <span
+            className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400"
+            style={{ animationDelay: "150ms" }}
+          />
+          <span
+            className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400"
+            style={{ animationDelay: "300ms" }}
+          />
+        </div>
       </div>
     </div>
   );
