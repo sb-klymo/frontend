@@ -13,11 +13,18 @@ export function LogoutButton() {
     if (signingOut) return;
     setSigningOut(true);
     const supabase = createSupabaseBrowserClient();
-    await supabase.auth.signOut();
-    // refresh() invalidates the server-rendered /chat page so the
-    // server-side getUser() check fires again on the redirected route.
-    router.replace("/login");
-    router.refresh();
+    try {
+      // `scope: 'local'` revokes only this session's refresh token —
+      // sibling tabs/devices stay signed in. The default `'global'`
+      // would surprise a user who has the admin dashboard open in
+      // another tab.
+      await supabase.auth.signOut({ scope: "local" });
+    } finally {
+      // Redirect even on error: the server-side getUser() check on
+      // /chat will catch any still-valid session on next nav.
+      router.replace("/login");
+      router.refresh();
+    }
   }
 
   return (

@@ -196,13 +196,13 @@ function TypingIndicator() {
         className="rounded-2xl bg-gray-100 px-4 py-3"
       >
         <div className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" />
+          <span className="h-1.5 w-1.5 rounded-full bg-gray-500 motion-safe:animate-bounce" />
           <span
-            className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400"
+            className="h-1.5 w-1.5 rounded-full bg-gray-500 motion-safe:animate-bounce"
             style={{ animationDelay: "150ms" }}
           />
           <span
-            className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400"
+            className="h-1.5 w-1.5 rounded-full bg-gray-500 motion-safe:animate-bounce"
             style={{ animationDelay: "300ms" }}
           />
         </div>
