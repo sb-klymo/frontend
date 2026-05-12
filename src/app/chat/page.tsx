@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 import { ChatRoot } from "./_components/ChatRoot";
+import { LogoutButton } from "./_components/LogoutButton";
 
 /**
  * Authenticated chat page.
@@ -28,7 +29,10 @@ export default async function ChatPage() {
     <main className="flex h-screen flex-col">
       <header className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3">
         <h1 className="text-lg font-semibold">Klymo</h1>
-        <span className="text-xs text-gray-500">{user.email}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500">{user.email}</span>
+          <LogoutButton />
+        </div>
       </header>
       <ChatRoot />
     </main>
