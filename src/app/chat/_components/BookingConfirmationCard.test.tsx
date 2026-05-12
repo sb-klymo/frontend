@@ -95,4 +95,20 @@ describe("BookingConfirmationCard", () => {
     const total = screen.getByTestId("booking-total").textContent ?? "";
     expect(total).toMatch(/450/);
   });
+
+  it("renders the conversational follow-up under the email note (EN)", () => {
+    render(<BookingConfirmationCard booking={_booking()} language="en" />);
+    const followUp = screen.getByTestId("booking-follow-up");
+    // Pin the EN string verbatim — it's the post-booking chat warmth
+    // the bot used to be missing (it stopped at the card alone, no
+    // closing line, which felt cold).
+    expect(followUp.textContent).toBe("Ready for the next trip? Just ask.");
+  });
+
+  it("localizes the follow-up to French", () => {
+    render(<BookingConfirmationCard booking={_booking()} language="fr" />);
+    expect(screen.getByTestId("booking-follow-up").textContent).toBe(
+      "Prêt pour le prochain voyage ? Dites-moi.",
+    );
+  });
 });

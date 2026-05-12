@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 
 import type { ChatMessage } from "@/hooks/useChatStream";
-import type { SupportedLanguage } from "@/lib/i18n";
+import { strings, type SupportedLanguage } from "@/lib/i18n";
 import { useChatStore } from "@/stores/chatStore";
 
 import { BookingConfirmationCard } from "./BookingConfirmationCard";
@@ -16,6 +16,10 @@ export type ChatWindowProps = {
   error: string | null;
   isStreaming: boolean;
   language: SupportedLanguage;
+  /** Latest known agent workflow stage, used to label the typing
+   * indicator (e.g. "Searching flights…" vs the generic "Thinking…").
+   * Null while the first turn is still in flight. */
+  workflowStage: string | null;
   send: (text: string) => void | Promise<void>;
   stop: () => void;
   reset: () => void;
@@ -26,6 +30,7 @@ export function ChatWindow({
   error,
   isStreaming,
   language,
+  workflowStage,
   send,
   stop,
   reset,
@@ -121,7 +126,7 @@ export function ChatWindow({
           })
         )}
         {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
-          <TypingIndicator />
+          <TypingIndicator language={language} workflowStage={workflowStage} />
         )}
       </div>
 
@@ -187,13 +192,46 @@ function EmptyState() {
   );
 }
 
-function TypingIndicator() {
+// Map every backend workflow_stage onto a typing-indicator label. The
+// mapping is coarse on purpose — "is the bot reasoning, searching,
+// presenting, or finalising?" is the granularity that helps the user
+// understand the wait. Stages that don't add useful information all
+// fall through to the generic "Thinking…" copy. See
+// `backend/src/agent/state.py::WorkflowStage` for the source of truth.
+function _typingLabelKey(
+  workflowStage: string | null,
+): keyof ReturnType<typeof strings>["typingIndicator"] {
+  switch (workflowStage) {
+    case "ready_for_search":
+      return "searching";
+    case "options_returned":
+    case "awaiting_departure_selection":
+    case "awaiting_return_selection":
+      return "presenting";
+    case "checkout_ready":
+    case "payment_pending":
+      return "booking";
+    default:
+      // draft / pending_info / completed / canceled / unknown
+      return "thinking";
+  }
+}
+
+function TypingIndicator({
+  language,
+  workflowStage,
+}: {
+  language: SupportedLanguage;
+  workflowStage: string | null;
+}) {
+  const t = strings(language).typingIndicator;
+  const label = t[_typingLabelKey(workflowStage)];
   return (
     <div className="flex justify-start" data-testid="typing-indicator">
       <div
         role="status"
-        aria-label="Assistant is typing"
-        className="rounded-2xl bg-gray-100 px-4 py-3"
+        aria-label={label}
+        className="flex items-center gap-2 rounded-2xl bg-gray-100 px-4 py-3"
       >
         <div className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-gray-500 motion-safe:animate-bounce" />
@@ -206,6 +244,12 @@ function TypingIndicator() {
             style={{ animationDelay: "300ms" }}
           />
         </div>
+        <span
+          className="text-xs text-gray-600"
+          data-testid="typing-indicator-label"
+        >
+          {label}
+        </span>
       </div>
     </div>
   );
