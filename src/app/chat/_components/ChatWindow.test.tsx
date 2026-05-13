@@ -17,6 +17,7 @@ const _noop = () => undefined;
 function _renderWindow(overrides: {
   workflowStage?: string | null;
   isStreaming?: boolean;
+  isBubblePending?: boolean;
   messages?: ChatMessage[];
   language?: "en" | "fr";
 } = {}) {
@@ -25,6 +26,7 @@ function _renderWindow(overrides: {
       messages={overrides.messages ?? []}
       error={null}
       isStreaming={overrides.isStreaming ?? true}
+      isBubblePending={overrides.isBubblePending ?? false}
       language={overrides.language ?? "en"}
       workflowStage={overrides.workflowStage ?? null}
       send={_noop}
@@ -119,6 +121,89 @@ describe("ChatWindow — TypingIndicator", () => {
     _renderWindow({ workflowStage: "ready_for_search" });
     const indicator = screen.getByRole("status");
     expect(indicator.getAttribute("aria-label")).toBe("Searching flights…");
+  });
+});
+
+describe("ChatWindow — intra-turn typing indicator (between bubbles)", () => {
+  /**
+   * L3-suivi 2 (UI polish): when the backend paces multiple bubbles
+   * within one turn (`event: typing` between `event: message`
+   * frames), `useChatStream` flips `isBubblePending=true`. The
+   * `ChatWindow` renders a typing indicator BELOW the last
+   * assistant bubble so the user sees "the bot is thinking"
+   * between consecutive thoughts.
+   *
+   * Distinct from the first-bubble case where `isStreaming=true`
+   * AND no assistant message exists yet — that's the connection-
+   * level "thinking" indicator above this turn's content.
+   */
+
+  it("renders typing indicator below the last assistant bubble when isBubblePending=true", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "oui, je veux partir à Londres" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "Refund en route!",
+        messageId: "msg-A",
+      },
+    ];
+    _renderWindow({
+      messages,
+      isStreaming: true,
+      isBubblePending: true,
+      workflowStage: "canceled",
+    });
+
+    // The indicator IS present — backend signalled another bubble
+    // is coming.
+    expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
+  });
+
+  it("does NOT render intra-turn typing indicator when isBubblePending=false", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "Hi" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "All your bubbles are belong to us.",
+        messageId: "msg-A",
+      },
+    ];
+    _renderWindow({
+      messages,
+      isStreaming: true,
+      isBubblePending: false,
+    });
+
+    // The first-bubble indicator path also gates on
+    // "last message not from assistant" — last IS from assistant
+    // here, so neither indicator should render.
+    expect(screen.queryByTestId("typing-indicator")).not.toBeInTheDocument();
+  });
+
+  it("isBubblePending takes effect even when isStreaming is false (defensive)", () => {
+    // The two flags are independent: isBubblePending could
+    // theoretically arrive before the connection-level
+    // isStreaming flips. The renderer must trust the explicit
+    // bubble-pending signal.
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "Hi" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "First bubble.",
+        messageId: "msg-A",
+      },
+    ];
+    _renderWindow({
+      messages,
+      isStreaming: false,
+      isBubblePending: true,
+      workflowStage: "canceled",
+    });
+
+    expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
   });
 });
 

@@ -137,11 +137,23 @@ export type ChatMessage = {
    * booking should never display as a confirmed-and-payable card.
    */
   cancellation?: CancellationDetails;
+  /**
+   * Backend-assigned bubble identity from the SSE `event: message`
+   * payload (`message_id`). For token-streaming chunks from a single
+   * LLM call, all deltas share the same id → we APPEND to this
+   * bubble. For multi-message returns (e.g. the L3-suivi 2
+   * cancel-continuation success emits 3 separate AIMessages), each
+   * AIMessage has a distinct id → each renders as its OWN bubble.
+   * Absent for bubbles created locally (user messages, card-only
+   * messages from `attachBooking`/`attachCancellation`).
+   */
+  messageId?: string;
 };
 
 type ServerEvent =
   | { type: "start"; conversation_id: string }
-  | { type: "message"; content: string; node?: string }
+  | { type: "message"; content: string; node?: string; message_id?: string }
+  | { type: "typing"; node?: string }
   | {
       type: "options";
       offers: DisplayedOffer[];
@@ -213,6 +225,14 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [workflowStage, setWorkflowStage] = useState<string | null>(null);
+  // L3-suivi 2 (UI polish) — flips true on `event: typing` and back
+  // to false on the next `event: message`. Used by ChatWindow to
+  // render a typing indicator BETWEEN consecutive assistant bubbles
+  // (the connection-level `isStreaming` flag covers the wait before
+  // the FIRST bubble; this is purely intra-turn pacing). Distinct
+  // from the streaming flag so it doesn't fight with token-streaming
+  // bubble rendering.
+  const [isBubblePending, setIsBubblePending] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   // Latest override is read from a ref at send-time so swapping
   // presets mid-conversation kicks in on the next message without
@@ -280,33 +300,68 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     workflowStageRef.current = workflowStage;
   }, [workflowStage]);
 
-  const appendAssistantChunk = useCallback((content: string, node?: string) => {
-    // Selection-turn tokens go to PER-NODE invisible buffers instead of
-    // an on-screen bubble. The booking event (or `done` fallback)
-    // decides what becomes visible. Splitting by node lets the flush
-    // logic discard the redundant select_node ack ("Got it, option 2")
-    // while surfacing the warm checkout_node close ("Copy on its way,
-    // ready for next trip?") as a separate bubble after the card.
-    // See bufferingTurnRef block above for the full strategy.
-    if (bufferingTurnRef.current) {
-      if (node === "checkout") {
-        bufferedCheckoutTextRef.current += content;
-      } else if (node === "select") {
-        bufferedSelectTextRef.current += content;
-      } else {
-        bufferedOtherTextRef.current += content;
+  const appendAssistantChunk = useCallback(
+    (content: string, node?: string, messageId?: string) => {
+      // Selection-turn tokens go to PER-NODE invisible buffers instead of
+      // an on-screen bubble. The booking event (or `done` fallback)
+      // decides what becomes visible. Splitting by node lets the flush
+      // logic discard the redundant select_node ack ("Got it, option 2")
+      // while surfacing the warm checkout_node close ("Copy on its way,
+      // ready for next trip?") as a separate bubble after the card.
+      // See bufferingTurnRef block above for the full strategy.
+      if (bufferingTurnRef.current) {
+        if (node === "checkout") {
+          bufferedCheckoutTextRef.current += content;
+        } else if (node === "select") {
+          bufferedSelectTextRef.current += content;
+        } else {
+          bufferedOtherTextRef.current += content;
+        }
+        return;
       }
-      return;
-    }
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last?.role === "assistant") {
-        // Extend the existing assistant message (token-streaming case).
-        return [...prev.slice(0, -1), { ...last, content: last.content + content }];
-      }
-      return [...prev, { id: randomId(), role: "assistant", content }];
-    });
-  }, []);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        // Bubble identity rule (L3-suivi 2):
+        //   - If this chunk carries a `messageId` AND the last
+        //     assistant message carries the SAME `messageId` → APPEND
+        //     (token streaming: each delta extends the bubble).
+        //   - If this chunk carries a `messageId` AND it DIFFERS from
+        //     the last bubble's `messageId` → PUSH a new bubble. This
+        //     is the multi-AIMessage case (e.g. the cancel-continuation
+        //     success emits 3 distinct AIMessages, each with its own
+        //     id; we want 3 distinct bubbles, not one merged blob).
+        //   - If this chunk has NO `messageId` (legacy backend, or
+        //     buffered/non-streaming paths) → fall back to the
+        //     "same-role → append" rule, preserving existing
+        //     behaviour for paths that don't yet send the id.
+        if (last?.role === "assistant") {
+          const sameBubble =
+            messageId !== undefined
+              ? last.messageId === messageId
+              : last.messageId === undefined;
+          if (sameBubble) {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                content: last.content + content,
+                // Latch the id if this is the first chunk that carries
+                // one (e.g. legacy bubble created before message_id
+                // arrived).
+                messageId: last.messageId ?? messageId,
+              },
+            ];
+          }
+          // Different id → new bubble.
+        }
+        return [
+          ...prev,
+          { id: randomId(), role: "assistant", content, messageId },
+        ];
+      });
+    },
+    [],
+  );
 
   const attachOffers = useCallback(
     (
@@ -623,7 +678,16 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 setConversationId(event.conversation_id);
                 break;
               case "message":
-                appendAssistantChunk(event.content, event.node);
+                // Clear the between-bubbles typing indicator the
+                // moment the next bubble's content starts arriving.
+                setIsBubblePending(false);
+                appendAssistantChunk(event.content, event.node, event.message_id);
+                break;
+              case "typing":
+                // Backend paced a gap between consecutive bubbles
+                // within this turn. Show the typing indicator until
+                // the next `event: message` arrives.
+                setIsBubblePending(true);
                 break;
               case "options":
                 attachOffers(event.offers, event.header, event.footer);
@@ -658,6 +722,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               case "done":
                 setConversationId(event.conversation_id);
                 setWorkflowStage(event.workflow_stage);
+                // Clear any lingering between-bubbles typing indicator
+                // — the turn is over, no more bubbles are coming.
+                setIsBubblePending(false);
                 // Flush per-node buffers if this was a buffered turn.
                 // Three cases handled below:
                 //   1. A card landed (booking or checkout_link) — flush
@@ -722,6 +789,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 break;
               case "error":
                 setError(event.message);
+                setIsBubblePending(false);
                 break;
             }
           }
@@ -731,6 +799,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
         setError((e as Error).message);
       } finally {
         setStreaming(false);
+        // Belt-and-suspenders: ensure the between-bubbles typing
+        // indicator never sticks past an aborted / errored turn.
+        setIsBubblePending(false);
         abortRef.current = null;
       }
     },
@@ -779,6 +850,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     messages,
     error,
     isStreaming,
+    isBubblePending,
     send,
     stop,
     reset,

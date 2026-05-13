@@ -54,6 +54,7 @@ export function ChatRoot() {
         messages={stream.messages}
         error={stream.error}
         isStreaming={stream.isStreaming}
+        isBubblePending={stream.isBubblePending}
         language={stream.language}
         workflowStage={stream.workflowStage}
         send={stream.send}
