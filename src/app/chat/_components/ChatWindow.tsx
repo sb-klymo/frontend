@@ -68,12 +68,36 @@ export function ChatWindow({
               // `booking` and `checkoutLink` because a cancelled trip
               // must never display as confirmed-and-payable. The
               // cancel acknowledgement is the final state.
+              //
+              // Render order — card FIRST, then the rephrased text
+              // bubble BELOW. The card is the factual anchor (PNR,
+              // refund amount, refund ID, ETA), the text is the warm
+              // follow-up ("…want to plan another trip from Marseille?").
+              // Reading top-to-bottom this lands as "here's the
+              // receipt — now let's keep going" rather than burying
+              // the transactional outcome under conversational copy.
+              //
+              // `attachCancellation` augments the in-flight assistant
+              // message with the cancellation payload, so `m.content`
+              // already carries the streamed/rephrased text by the
+              // time this branch fires. Skip the bubble when content
+              // is empty (defensive — earlier flow that pushes a
+              // fresh cancellation-only message has content="").
               return (
-                <CancellationCard
-                  key={m.id}
-                  cancellation={m.cancellation}
-                  language={language}
-                />
+                <div key={m.id} className="space-y-3">
+                  <CancellationCard
+                    cancellation={m.cancellation}
+                    language={language}
+                  />
+                  {m.content ? (
+                    <Bubble
+                      key={`${m.id}-text`}
+                      role={m.role}
+                      content={m.content}
+                      streaming={false}
+                    />
+                  ) : null}
+                </div>
               );
             }
             if (m.booking) {
