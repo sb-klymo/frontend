@@ -15,6 +15,15 @@ export type ChatWindowProps = {
   messages: ChatMessage[];
   error: string | null;
   isStreaming: boolean;
+  /** L3-suivi 2 (UI polish): when true, render a typing indicator
+   * BELOW the last assistant bubble. Set by `useChatStream` on
+   * receipt of an `event: typing` SSE frame from the backend's
+   * intra-turn pacing, and cleared on the next `event: message`.
+   * Used to show "the bot is thinking" between consecutive bubbles
+   * within one turn (e.g. cancel-continuation emits 3 bubbles with
+   * 600ms pauses between). Distinct from `isStreaming`, which
+   * covers the gap BEFORE the first bubble of a turn. */
+  isBubblePending?: boolean;
   language: SupportedLanguage;
   /** Latest known agent workflow stage, used to label the typing
    * indicator (e.g. "Searching flights…" vs the generic "Thinking…").
@@ -29,6 +38,7 @@ export function ChatWindow({
   messages,
   error,
   isStreaming,
+  isBubblePending = false,
   language,
   workflowStage,
   send,
@@ -150,6 +160,16 @@ export function ChatWindow({
           })
         )}
         {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
+          <TypingIndicator language={language} workflowStage={workflowStage} />
+        )}
+        {/* L3-suivi 2 (UI polish): when the backend paced a gap
+         * between two assistant bubbles within the same turn (`event:
+         * typing` frame), render the typing indicator BELOW the
+         * existing assistant bubble. The first-bubble case above
+         * gates on "last message isn't from assistant"; this case
+         * gates on the inverse (an assistant bubble already exists
+         * AND the backend signalled another bubble is coming). */}
+        {isBubblePending && messages[messages.length - 1]?.role === "assistant" && (
           <TypingIndicator language={language} workflowStage={workflowStage} />
         )}
       </div>
