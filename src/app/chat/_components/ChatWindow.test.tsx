@@ -121,3 +121,89 @@ describe("ChatWindow — TypingIndicator", () => {
     expect(indicator.getAttribute("aria-label")).toBe("Searching flights…");
   });
 });
+
+describe("ChatWindow — CancellationCard renders text bubble alongside card", () => {
+  /**
+   * 2026-05-13 regression: `attachCancellation` augments the
+   * in-flight assistant message with the cancellation payload, but
+   * the renderer used to short-circuit on `m.cancellation` and drop
+   * the text content entirely. With the L3-suivi 1 follow-up hook
+   * ("…want to plan another trip from Marseille?") landing in the
+   * SAME message's `content`, the user lost that hook visually —
+   * only the receipt-style card rendered.
+   *
+   * Contract: when a message carries BOTH content AND cancellation,
+   * the bubble renders ABOVE the card. When content is empty (older
+   * flow that pushes a fresh cancellation-only message), only the
+   * card renders.
+   */
+
+  it("renders the cancellation card FIRST, then the rephrased text bubble below", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "oui je veux annuler" },
+      {
+        id: "a1",
+        role: "assistant",
+        content:
+          "Remboursement en route ! La réservation STUBXXXXX1 est bien annulée, et vous récupérez 540.00 USD sur votre carte d'ici 5 à 10 jours ouvrés. On repart sur un nouveau trajet depuis Marseille ?",
+        cancellation: {
+          trip_id: "trip-1",
+          booking_reference: "STUBXXXXX1",
+          refund_id: "re_test_1",
+          amount_cents: 54000,
+          currency: "USD",
+        },
+      },
+    ];
+    _renderWindow({ messages, isStreaming: false, language: "fr" });
+
+    // The cancellation card must render.
+    const card = screen.getByTestId("cancellation-card");
+    expect(card).toBeInTheDocument();
+
+    // AND the follow-up text bubble must render with the origin
+    // hook intact — this is the bug the fix targets.
+    const followupText = screen.getByText(/nouveau trajet depuis Marseille/i);
+    expect(followupText).toBeInTheDocument();
+
+    // Order matters: the card is the factual anchor (receipt) and
+    // must come BEFORE the conversational follow-up underneath.
+    // `compareDocumentPosition` returns a bitmask; the
+    // DOCUMENT_POSITION_FOLLOWING flag (4) is set when the second
+    // node appears AFTER the first in document order.
+    const followingMask = 4; // Node.DOCUMENT_POSITION_FOLLOWING
+    expect(
+      card.compareDocumentPosition(followupText) & followingMask,
+    ).toBe(followingMask);
+  });
+
+  it("skips the empty bubble when the cancellation message has no content", () => {
+    // Defensive — older flow / fresh-cancellation-only path pushes
+    // a message with content="". The card must still render; no
+    // empty rectangle bubble should appear above it.
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "oui" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "",
+        cancellation: {
+          trip_id: "trip-1",
+          booking_reference: "STUBXXXXX2",
+          refund_id: "re_test_2",
+          amount_cents: 54000,
+          currency: "USD",
+        },
+      },
+    ];
+    const { container } = _renderWindow({ messages, isStreaming: false });
+
+    // Card renders.
+    expect(screen.getByTestId("cancellation-card")).toBeInTheDocument();
+    // No assistant bubble (the gray-100 pill) above it. Detect by
+    // class since Bubble has no test id; the user message above is
+    // blue-600, so any gray-100 element would be a stray assistant
+    // bubble — there shouldn't be one when content is empty.
+    expect(container.querySelector(".bg-gray-100")).toBeNull();
+  });
+});
