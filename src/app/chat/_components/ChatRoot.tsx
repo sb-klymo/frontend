@@ -27,16 +27,26 @@ import { useChatStore } from "@/stores/chatStore";
 import { ChatWindow } from "./ChatWindow";
 import { DevPanel } from "./DevPanel";
 
-export function ChatRoot() {
+/**
+ * `isTeam` is server-derived from the `TEAM_EMAILS` allowlist on the
+ * backend — the frontend never decides "team-ness" on its own. When
+ * true in a production build the dev panel renders alongside the
+ * chat (same as in dev). When false, the panel is hidden. Local dev
+ * builds always show it (`DEV_BUILD === true`) so the flag is only
+ * load-bearing for the deployed app.
+ */
+export function ChatRoot({ isTeam = false }: { isTeam?: boolean }) {
   const [policyPreset, setPolicyPreset] = useState<PolicyPresetId>("none");
   const stream = useChatStream({
     devPolicyOverride: findPreset(policyPreset).config,
   });
   const conversationId = useChatStore((s) => s.conversationId);
 
+  const showDevPanel = DEV_BUILD || isTeam;
+
   return (
     <div className="flex flex-1 overflow-hidden">
-      {DEV_BUILD && (
+      {showDevPanel && (
         <DevPanel
           send={stream.send}
           reset={stream.reset}
