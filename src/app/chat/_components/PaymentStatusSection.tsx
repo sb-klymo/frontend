@@ -36,6 +36,7 @@ type CurrentUser = {
   email?: string | null;
   payment_mode?: PaymentMode;
   stripe_payment_method_id?: string | null;
+  is_team?: boolean;
 };
 
 const STRIPE_CUSTOMER_DEEPLINK = "https://dashboard.stripe.com/test/customers";
