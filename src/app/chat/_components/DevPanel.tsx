@@ -26,6 +26,10 @@ import {
   POLICY_PRESETS,
   type PolicyPresetId,
 } from "@/lib/policy-presets";
+import {
+  VOICE_PRESETS,
+  type VoicePresetId,
+} from "@/lib/voice-presets";
 
 import { IssuingCardsSection } from "./IssuingCardsSection";
 import { PaymentStatusSection } from "./PaymentStatusSection";
@@ -110,6 +114,12 @@ export type DevPanelProps = {
   // time; the panel's only job is to surface the choice.
   policyPreset: PolicyPresetId;
   onPolicyPresetChange: (id: PolicyPresetId) => void;
+  // Voice preset selector — drives the dev_vibe_override forwarded to
+  // /chat. Symmetric to policyPreset above. Lets the developer A/B
+  // Klymo's playful vs neutral register mid-conversation without
+  // restarting anything.
+  voicePreset: VoicePresetId;
+  onVoicePresetChange: (id: VoicePresetId) => void;
 };
 
 export function DevPanel({
@@ -123,6 +133,8 @@ export function DevPanel({
   error,
   policyPreset,
   onPolicyPresetChange,
+  voicePreset,
+  onVoicePresetChange,
 }: DevPanelProps) {
   // Local toggle for which language's prompts to show. Independent of
   // the auto-detected `language` so the developer can visually scan
@@ -218,6 +230,14 @@ export function DevPanel({
           language={promptLang}
           open={isOpen("policy")}
           onToggle={() => toggle("policy")}
+        />
+
+        <VoiceSection
+          activeId={voicePreset}
+          onChange={onVoicePresetChange}
+          language={promptLang}
+          open={isOpen("voice")}
+          onToggle={() => toggle("voice")}
         />
 
         <IssuingCardsSection
@@ -452,6 +472,69 @@ function PolicySection({
     </section>
   );
 }
+
+function VoiceSection({
+  activeId,
+  onChange,
+  language,
+  open,
+  onToggle,
+}: {
+  activeId: VoicePresetId;
+  onChange: (id: VoicePresetId) => void;
+  language: SupportedLanguage;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  // "Active" badge only when the user picked a non-default preset. Mirrors
+  // PolicySection's "Actif" pill so the at-a-glance signal is consistent
+  // across dev-panel toggles.
+  const activeBadge =
+    activeId !== "default" ? (
+      <span
+        className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800"
+        data-testid="dev-voice-active-badge"
+      >
+        {language === "fr" ? "Actif" : "Active"}
+      </span>
+    ) : null;
+
+  return (
+    <section data-testid="dev-voice-section">
+      <CollapsibleHeader
+        title={language === "fr" ? "Voix" : "Voice"}
+        open={open}
+        onToggle={onToggle}
+        trailing={activeBadge}
+      />
+      {open && (
+        <div className="space-y-1">
+          {VOICE_PRESETS.map((p) => {
+            const active = p.id === activeId;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onChange(p.id)}
+                title={p.hint[language]}
+                data-testid={`dev-voice-preset-${p.id}`}
+                data-active={active ? "true" : "false"}
+                className={`block w-full truncate rounded border px-2 py-1.5 text-left text-xs ${
+                  active
+                    ? "border-amber-500 bg-amber-50 font-medium text-amber-900"
+                    : "border-gray-200 bg-white text-gray-800 hover:border-amber-400 hover:bg-amber-50"
+                }`}
+              >
+                {p.label[language]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 
 function CategorySection({
   category,

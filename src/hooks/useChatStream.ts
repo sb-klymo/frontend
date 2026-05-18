@@ -17,6 +17,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { DisplayedOffer } from "@/types/chat";
+import type { Vibe } from "@/lib/voice-presets";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -218,10 +219,23 @@ export type UseChatStreamOptions = {
    * don't recreate `send` and tear down its in-flight reader.
    */
   devPolicyOverride?: OrgPolicySettings | null;
+  /**
+   * Dev-only: forward a `Vibe` (neutral | playful) to override the
+   * rephraser's voice register for the duration of one chat turn.
+   * Honoured outside production OR for team-allowlisted users in
+   * production. Same ref pattern as `devPolicyOverride` so swapping
+   * the preset mid-conversation kicks in on the next message without
+   * tearing down any active stream.
+   */
+  devVibeOverride?: Vibe | null;
 };
 
 export function useChatStream(options: UseChatStreamOptions = {}) {
-  const { endpoint = "/api/chat", devPolicyOverride = null } = options;
+  const {
+    endpoint = "/api/chat",
+    devPolicyOverride = null,
+    devVibeOverride = null,
+  } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [workflowStage, setWorkflowStage] = useState<string | null>(null);
@@ -243,6 +257,14 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   useEffect(() => {
     devPolicyOverrideRef.current = devPolicyOverride;
   }, [devPolicyOverride]);
+  // Same ref pattern as devPolicyOverrideRef — swapping the DevPanel
+  // voice toggle mid-conversation must kick in on the next message
+  // without recreating `send` (which would tear down the in-flight
+  // AbortController and reader).
+  const devVibeOverrideRef = useRef<Vibe | null>(devVibeOverride);
+  useEffect(() => {
+    devVibeOverrideRef.current = devVibeOverride;
+  }, [devVibeOverride]);
 
   // Buffer streamed text during selection turns that may end with a
   // booking. Without this, the user sees `select_node` + `checkout_node`
@@ -648,6 +670,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             // settings.is_production is True.
             ...(devPolicyOverrideRef.current !== null
               ? { dev_policy_override: devPolicyOverrideRef.current }
+              : {}),
+            ...(devVibeOverrideRef.current !== null
+              ? { dev_vibe_override: devVibeOverrideRef.current }
               : {}),
           }),
           signal: controller.signal,
