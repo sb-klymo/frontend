@@ -113,4 +113,51 @@ describe("BookingConfirmationCard", () => {
     expect(screen.queryByText(/copie arrive/i)).toBeNull();
     expect(screen.queryByText(/Prêt pour le prochain voyage/i)).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // 5h — total flight time row
+  // -------------------------------------------------------------------------
+
+  it("renders 'Total flight time' row when total_duration_minutes is set", () => {
+    // 2h 15m = 135 min.
+    render(<BookingConfirmationCard booking={_booking({ total_duration_minutes: 135 })} />);
+    expect(screen.getByTestId("booking-total-duration-row")).toBeInTheDocument();
+    const duration = screen.getByTestId("booking-total-duration").textContent ?? "";
+    expect(duration).toMatch(/2h.*15min/i);
+  });
+
+  it("renders the FR label for total flight time", () => {
+    render(
+      <BookingConfirmationCard
+        booking={_booking({ total_duration_minutes: 135 })}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText(/Temps de vol total/i)).toBeInTheDocument();
+  });
+
+  it("formats whole-hour durations without a stray '0min'", () => {
+    // 4h flat — must read as "4h", not "4h 0min".
+    render(<BookingConfirmationCard booking={_booking({ total_duration_minutes: 240 })} />);
+    const duration = screen.getByTestId("booking-total-duration").textContent ?? "";
+    expect(duration).toBe("4h");
+  });
+
+  it("handles round-trip total (sums of both legs)", () => {
+    // Real-world round-trip: ~9h30 outbound + ~13h30 return = 1380 min.
+    render(<BookingConfirmationCard booking={_booking({ total_duration_minutes: 1380 })} />);
+    const duration = screen.getByTestId("booking-total-duration").textContent ?? "";
+    // 1380 / 60 = 23h, 1380 % 60 = 0.
+    expect(duration).toBe("23h");
+  });
+
+  it("hides the row when total_duration_minutes is missing (legacy payload)", () => {
+    render(<BookingConfirmationCard booking={_booking()} />);
+    expect(screen.queryByTestId("booking-total-duration-row")).toBeNull();
+  });
+
+  it("hides the row when total_duration_minutes is 0 (zero is meaningless to display)", () => {
+    render(<BookingConfirmationCard booking={_booking({ total_duration_minutes: 0 })} />);
+    expect(screen.queryByTestId("booking-total-duration-row")).toBeNull();
+  });
 });

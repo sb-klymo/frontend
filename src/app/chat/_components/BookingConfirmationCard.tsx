@@ -69,6 +69,27 @@ export function BookingConfirmationCard({
         ))}
       </ul>
 
+      {/* 5h — total flight time across all booked legs. Hidden when the
+          backend didn't send the field (older payload) or sent 0 — the
+          line would just read "Total flight time: 0min" which is
+          confusing. Especially useful on round-trip and multi-leg
+          bookings where summing the legs in your head is the gap the
+          2026-05-18 user feedback called out. */}
+      {booking.total_duration_minutes && booking.total_duration_minutes > 0 ? (
+        <div
+          className="mt-3 flex items-baseline justify-between gap-3 text-xs"
+          data-testid="booking-total-duration-row"
+        >
+          <dt className="text-gray-500">{t.totalFlightTimeLabel}</dt>
+          <dd
+            className="font-medium text-gray-700"
+            data-testid="booking-total-duration"
+          >
+            {formatDuration(booking.total_duration_minutes, language)}
+          </dd>
+        </div>
+      ) : null}
+
       <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-emerald-200 pt-2 text-sm">
         <dt className="text-gray-600">{t.totalLabel}</dt>
         <dd className="font-semibold text-gray-900" data-testid="booking-total">
@@ -157,4 +178,19 @@ function formatDateTime(iso: string, language: SupportedLanguage): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+/**
+ * Render a whole number of minutes as "Xh Ymin" (or "Xh" / "Ymin" when
+ * one side is zero). FR/EN use the same compact form — "4h 30min"
+ * reads natively in both languages, and the unit suffix avoids the
+ * ambiguity of "4:30" (which could mean a time-of-day).
+ */
+function formatDuration(totalMinutes: number, language: SupportedLanguage): string {
+  if (totalMinutes <= 0) return "";
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return language === "fr" ? `${minutes} min` : `${minutes}min`;
+  if (minutes === 0) return `${hours}h`;
+  return language === "fr" ? `${hours}h ${minutes}min` : `${hours}h ${minutes}min`;
 }
