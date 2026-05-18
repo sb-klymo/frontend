@@ -65,6 +65,30 @@ export type CancellationDetails = {
 };
 
 /**
+ * Onboarding redirect surfaced via `event: onboarding_redirect` (PR-4
+ * phase-4). Backend emits one when this turn lands
+ * `workflow_stage='onboarding_payment_redirect'` — the third stage of
+ * the conversational signup, parked until the user completes the
+ * Stripe SetupIntent on the existing /onboarding/payment-method page.
+ *
+ * The frontend renders an `OnboardingCard` with a CTA button pointing
+ * at `url`. After the user finishes Stripe, the existing
+ * `PaymentMethodForm` redirects back to `/chat?onboarded=1`; the
+ * chat-side `onboard_node` stage-3 handler reads
+ * `organizations.onboarding_completed_at` on the user's next turn and
+ * transitions the conversation out of the onboarding flow.
+ */
+export type OnboardingDetails = {
+  /** Absolute URL of the Stripe SetupIntent page (sourced from backend
+   * so a future relocation doesn't require a frontend bump). */
+  url: string;
+  /** Echoed back from the user's onboarding draft for the card title.
+   * Optional because the backend defensively passes `None` when the
+   * draft state is missing (shouldn't happen, but safe). */
+  company_name?: string | null;
+};
+
+/**
  * Stripe Checkout link surfaced via `event: checkout_link` (M2). Fired
  * for users on payment modes 2 (`checkout_opt_in`) and 3
  * (`checkout_fallback`) when the agent reaches a billable offer — the
@@ -138,6 +162,15 @@ export type ChatMessage = {
    */
   cancellation?: CancellationDetails;
   /**
+   * Onboarding-redirect payload attached via the
+   * `event: onboarding_redirect` SSE frame (PR-4 phase-4). When
+   * present, the renderer shows an `OnboardingCard` with a CTA
+   * button pointing at the Stripe SetupIntent page. Mutually
+   * exclusive with the booking-flow cards in practice — onboarding
+   * only fires before any trip has been planned.
+   */
+  onboarding?: OnboardingDetails;
+  /**
    * Backend-assigned bubble identity from the SSE `event: message`
    * payload (`message_id`). For token-streaming chunks from a single
    * LLM call, all deltas share the same id → we APPEND to this
@@ -163,6 +196,7 @@ type ServerEvent =
     }
   | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[] }
   | { type: "checkout_link"; trip_id: string; checkout_url: string; amount_cents: number; currency: string }
+  | { type: "onboarding_redirect"; url: string; company_name?: string | null }
   | {
       type: "cancellation";
       trip_id: string;
@@ -490,6 +524,24 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
+  const attachOnboarding = useCallback((onboarding: OnboardingDetails) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        // Same turn as the rephrased "add a payment method" text —
+        // augment the assistant message so the renderer shows the
+        // OnboardingCard with the CTA button. Same shape as the
+        // attach* siblings; the card visually replaces the link-in-
+        // text bubble.
+        return [...prev.slice(0, -1), { ...last, onboarding }];
+      }
+      return [
+        ...prev,
+        { id: randomId(), role: "assistant", content: "", onboarding },
+      ];
+    });
+  }, []);
+
   // M2-H3 — auto-morph the CheckoutPaymentCard from "pending" to
   // "paid" when the Stripe webhook fires. We subscribe to Supabase
   // Realtime on `public.transactions` filtered by the most recent
@@ -710,6 +762,12 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   currency: event.currency,
                 });
                 break;
+              case "onboarding_redirect":
+                attachOnboarding({
+                  url: event.url,
+                  company_name: event.company_name,
+                });
+                break;
               case "cancellation":
                 attachCancellation({
                   trip_id: event.trip_id,
@@ -816,6 +874,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       attachBooking,
       attachCheckoutLink,
       attachCancellation,
+      attachOnboarding,
     ],
   );
 

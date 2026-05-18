@@ -9,6 +9,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { BookingConfirmationCard } from "./BookingConfirmationCard";
 import { CancellationCard } from "./CancellationCard";
 import { CheckoutPaymentCard } from "./CheckoutPaymentCard";
+import { OnboardingCard } from "./OnboardingCard";
 import { OptionList } from "./OptionList";
 
 export type ChatWindowProps = {
@@ -108,6 +109,22 @@ export function ChatWindow({
                     />
                   ) : null}
                 </div>
+              );
+            }
+            if (m.onboarding) {
+              // PR-4 phase-4 — first-time signup CTA. Onboarding only
+              // fires before any trip exists, so this branch is
+              // mutually exclusive with booking/checkoutLink in
+              // practice. Renders BEFORE the text-bubble check so the
+              // backend's rephrased "add a payment method here…" text
+              // is REPLACED by the card (the URL in the text would be
+              // a redundant duplicate of the CTA button).
+              return (
+                <OnboardingCard
+                  key={m.id}
+                  onboarding={m.onboarding}
+                  language={language}
+                />
               );
             }
             if (m.booking) {
