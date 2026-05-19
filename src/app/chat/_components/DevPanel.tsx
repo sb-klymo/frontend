@@ -32,6 +32,7 @@ import {
 } from "@/lib/voice-presets";
 
 import { IssuingCardsSection } from "./IssuingCardsSection";
+import { OrgRulesSection } from "./OrgRulesSection";
 import { PaymentStatusSection } from "./PaymentStatusSection";
 
 // ---------------------------------------------------------------------------
@@ -230,6 +231,12 @@ export function DevPanel({
           language={promptLang}
           open={isOpen("policy")}
           onToggle={() => toggle("policy")}
+        />
+
+        <OrgRulesSection
+          language={promptLang}
+          open={isOpen("org-rules")}
+          onToggle={() => toggle("org-rules")}
         />
 
         <VoiceSection
