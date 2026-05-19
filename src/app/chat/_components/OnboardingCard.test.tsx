@@ -69,6 +69,19 @@ describe("OnboardingCard", () => {
     );
   });
 
+  it("opens the CTA link in a new tab with safe rel attributes", () => {
+    // Same-tab navigation drops the localhost session when the payment
+    // page is hosted on a different origin (Vercel) and unmounts the
+    // SSE chat connection even on a single domain in prod. New-tab is
+    // the right behavior for both. `rel="noopener noreferrer"` is the
+    // standard hardening for `target="_blank"`.
+    render(<OnboardingCard onboarding={_onboarding()} />);
+    const cta = screen.getByTestId("onboarding-cta");
+    expect(cta).toHaveAttribute("target", "_blank");
+    expect(cta).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(cta).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
+  });
+
   it("renders the security / round-trip note", () => {
     render(<OnboardingCard onboarding={_onboarding()} />);
     const note = screen.getByTestId("onboarding-note").textContent ?? "";

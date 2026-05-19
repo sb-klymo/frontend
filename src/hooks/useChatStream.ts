@@ -928,19 +928,24 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     useChatStore.getState().resetConversation();
   }, []);
 
-  // Detect the language from the most recent user message so the
-  // static UI labels (OptionList header/footer, OptionCard badges)
-  // can be rendered in FR or EN. The bot's conversational text is
-  // localised by the backend's phrase() helper; this is just for
-  // hardcoded React-rendered strings that don't go through it.
+  // Sticky language detection across the whole conversation: once
+  // French is observed in ANY user message, the static UI labels stay
+  // French even when subsequent replies are language-neutral
+  // (single-token names, "ok", "1000"). Mirrors the backend's
+  // `resolve_sticky_language` semantic in klymo_personality.py so the
+  // bot's rephrased text and the React-rendered cards never flip
+  // mid-conversation.
   //
-  // No manual `useMemo`: React Compiler (Next 16+) auto-memoizes
-  // pure derivations of inputs, and the previous imperative
-  // for-loop-with-early-return blocked compiler analysis
-  // (react-hooks/preserve-manual-memoization).
-  const lastUserMessage = messages.findLast((m) => m.role === "user");
-  const language: SupportedLanguage = lastUserMessage
-    ? detectLanguage(lastUserMessage.content)
+  // Pre-fix bug (2026-05-19): only the most recent user message was
+  // scanned, so typing "comment ça marche ?" (FR) then "Harold" (neutral)
+  // caused the OnboardingCard to render in English on the Harold turn.
+  //
+  // No manual `useMemo`: React Compiler (Next 16+) auto-memoizes pure
+  // derivations of inputs.
+  const language: SupportedLanguage = messages.some(
+    (m) => m.role === "user" && detectLanguage(m.content) === "fr",
+  )
+    ? "fr"
     : "en";
 
   return {
