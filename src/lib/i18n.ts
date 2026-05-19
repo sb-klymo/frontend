@@ -80,10 +80,15 @@ type Strings = {
   };
   onboardingCard: {
     title: string;
-    subtitleWithCompany: (company: string) => string;
-    subtitleGeneric: string;
+    subtitle: string;
     ctaLabel: string;
     note: string;
+    // Morphed render state after the Stripe SetupIntent webhook
+    // flips users.stripe_payment_method_id (Realtime in
+    // useChatStream sets m.onboarding.completed=true). Same card,
+    // green styling, no CTA.
+    savedTitle: string;
+    savedSubtitle: string;
   };
   checkoutCard: {
     title: string;
@@ -158,13 +163,12 @@ const EN: Strings = {
   },
   onboardingCard: {
     title: "Last step: save a card",
-    subtitleWithCompany: (company) =>
-      `${company} is all set on the policy side. Add a payment method to finish setup.`,
-    subtitleGeneric:
-      "You're all set on the policy side. Add a payment method to finish setup.",
+    subtitle: "Add a payment method to finish setting up your account.",
     ctaLabel: "Add payment method",
     note:
       "Card details are entered into Stripe's secure iframe — they never touch our server. You'll come straight back here when done.",
+    savedTitle: "Payment method saved",
+    savedSubtitle: "You're all set. Your conversation will continue here.",
   },
   checkoutCard: {
     title: "Complete your booking",
@@ -254,13 +258,13 @@ const FR: Strings = {
   },
   onboardingCard: {
     title: "Dernière étape : enregistrer une carte",
-    subtitleWithCompany: (company) =>
-      `${company} est paré côté politique. Ajoutez un moyen de paiement pour finaliser.`,
-    subtitleGeneric:
-      "Tout est paré côté politique. Ajoutez un moyen de paiement pour finaliser.",
+    subtitle: "Ajoutez un moyen de paiement pour finaliser votre compte.",
     ctaLabel: "Ajouter un moyen de paiement",
     note:
       "Les détails de la carte sont saisis dans l'iframe sécurisée Stripe, ils ne passent jamais par notre serveur. Vous reviendrez ici directement après.",
+    savedTitle: "Moyen de paiement enregistré",
+    savedSubtitle:
+      "Tout est en place. Votre conversation continue ici.",
   },
   checkoutCard: {
     title: "Finalisez votre réservation",

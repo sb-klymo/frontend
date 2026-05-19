@@ -99,6 +99,13 @@ export type OnboardingDetails = {
    * Optional because the backend defensively passes `None` when the
    * draft state is missing (shouldn't happen, but safe). */
   company_name?: string | null;
+  /** True once the Stripe SetupIntent webhook flipped
+   * `users.stripe_payment_method_id` and Realtime delivered the
+   * UPDATE to the chat tab. Flipped by `markOnboardingComplete`
+   * inside the Realtime subscription effect — the card morphs in
+   * place to a green "Payment method saved" state without a refresh.
+   * Mirrors the M2-H3 booking-card morph pattern. */
+  completed?: boolean;
 };
 
 /**
@@ -591,6 +598,34 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
+  // Realtime morph for the OnboardingCard — pairs with `markCheckoutPaid`
+  // (M2-H3) but on the onboarding flow. Walks `messages` backwards to
+  // find the most recent message carrying an `OnboardingDetails`
+  // attachment and flips `completed=true` on it. The card's render
+  // path then switches to the green "Payment method saved" state.
+  //
+  // No-op if no onboarding message is found (e.g. the chat state was
+  // reset between subscription and event). The Realtime subscription
+  // already guards against double-fires via the once-per-user ref;
+  // this is a defensive shape, not a correctness gate.
+  const markOnboardingComplete = useCallback(() => {
+    setMessages((prev) => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const m = prev[i];
+        // `prev[i]` is typed as `ChatMessage | undefined` under
+        // noUncheckedIndexedAccess; the loop bounds guarantee it's
+        // defined but TypeScript can't narrow that.
+        if (!m || !m.onboarding || m.onboarding.completed) continue;
+        const morphed: ChatMessage = {
+          ...m,
+          onboarding: { ...m.onboarding, completed: true },
+        };
+        return [...prev.slice(0, i), morphed, ...prev.slice(i + 1)];
+      }
+      return prev;
+    });
+  }, []);
+
   // M2-H3 — auto-morph the CheckoutPaymentCard from "pending" to
   // "paid" when the Stripe webhook fires. We subscribe to Supabase
   // Realtime on `public.transactions` filtered by the most recent
@@ -1012,6 +1047,11 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             // duplicate the resume turn.
             if (resumedOnboardingForUserRef.current === userId) return;
             resumedOnboardingForUserRef.current = userId;
+            // Morph the existing OnboardingCard to its "saved" state
+            // BEFORE triggering the silent resume turn. Otherwise the
+            // card still reads "Add payment method" while the bot is
+            // streaming the welcome bubble — visually inconsistent.
+            markOnboardingComplete();
             // Sentinel message — the onboarding-redirect handler
             // ignores message content. `silent: true` skips the
             // optimistic user-bubble append so the user only sees
@@ -1030,7 +1070,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [workflowStage, send]);
+  }, [workflowStage, send, markOnboardingComplete]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
