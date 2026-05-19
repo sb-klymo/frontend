@@ -712,11 +712,18 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   }, [pendingTripId, markCheckoutPaid, attachBooking, markBookingFailed]);
 
   const send = useCallback(
-    async (userText: string) => {
+    async (userText: string, options: { silent?: boolean } = {}) => {
       if (!userText.trim() || isStreaming) return;
 
-      const userMsg: ChatMessage = { id: randomId(), role: "user", content: userText };
-      setMessages((prev) => [...prev, userMsg]);
+      // `silent` skips the optimistic user-message append for system-
+      // triggered turns (e.g. onboarding Realtime resume) where the
+      // user didn't actually type anything. The assistant response
+      // still streams normally. Used by the public-API
+      // `triggerOnboardingResume` below.
+      if (!options.silent) {
+        const userMsg: ChatMessage = { id: randomId(), role: "user", content: userText };
+        setMessages((prev) => [...prev, userMsg]);
+      }
       setError(null);
       setStreaming(true);
 
@@ -938,6 +945,93 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     ],
   );
 
+  // PR-Polish phase-4 — auto-resume onboarding once the Stripe
+  // SetupIntent webhook flips `users.stripe_payment_method_id`.
+  //
+  // Without this, the user completes card setup in a separate tab
+  // (OnboardingCard CTA `target="_blank"`) and the chat tab stays
+  // parked at `onboarding_payment_redirect` until the user manually
+  // types something — at which point the backend's polling
+  // completion check fires. That works but it's bad UX: the user
+  // expects "card saved → conversation continues" without having
+  // to nudge the bot.
+  //
+  // The subscription mirrors the M2-H3 pattern above (Realtime on
+  // `public.transactions`) but on `public.users` instead, filtered
+  // by the authenticated user's id, and only mounted while the
+  // workflow is parked at the redirect stage. The "tick" is a
+  // silent send of a sentinel message that the backend's onboarding
+  // node treats as any other turn (the handler doesn't use message
+  // content — it polls the DB). After the turn, the workflow
+  // transitions to `draft` and the bot emits "Welcome aboard" as a
+  // normal AIMessage which streams into the chat.
+  //
+  // Ref guard prevents double-firing if Realtime delivers multiple
+  // UPDATEs in a short window (e.g. a second webhook attempt).
+  const resumedOnboardingForUserRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (workflowStage !== "onboarding_payment_redirect") return;
+    const supabase = createSupabaseBrowserClient();
+
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    void (async () => {
+      // Same JWT-hydration dance as the M2-H3 effect above —
+      // necessary because RLS on `public.users` is `to authenticated`.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled || !session) return;
+      // Defensive: the session shape can vary across @supabase/ssr
+      // versions and is mocked thinly in tests (no `user` field).
+      // Bail quietly if the id is missing rather than throwing in
+      // an effect (which would surface as an unhandled rejection).
+      const userId = session.user?.id;
+      if (!userId) return;
+      supabase.realtime.setAuth(session.access_token);
+
+      channel = supabase
+        .channel(`onboarding-resume-${userId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "users",
+            filter: `id=eq.${userId}`,
+          },
+          (payload: { new: Record<string, unknown> }) => {
+            const next = payload.new as {
+              stripe_payment_method_id?: string | null;
+            };
+            const pmId = next.stripe_payment_method_id;
+            if (typeof pmId !== "string" || !pmId.trim()) return;
+            // Guard: only fire once per user. A second webhook
+            // attempt (Stripe retries on 5xx) would otherwise
+            // duplicate the resume turn.
+            if (resumedOnboardingForUserRef.current === userId) return;
+            resumedOnboardingForUserRef.current = userId;
+            // Sentinel message — the onboarding-redirect handler
+            // ignores message content. `silent: true` skips the
+            // optimistic user-bubble append so the user only sees
+            // the bot's "Welcome aboard" reply land.
+            void send("__klymo_onboarding_resume__", { silent: true });
+          },
+        )
+        .subscribe();
+      if (cancelled && channel) {
+        void supabase.removeChannel(channel);
+        channel = null;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [workflowStage, send]);
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -948,6 +1042,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     setError(null);
     setWorkflowStage(null);
     setBackendLanguage(null);
+    // Clear the once-per-user guard so a fresh onboarding cycle in
+    // the same tab can re-fire the Realtime resume.
+    resumedOnboardingForUserRef.current = null;
     useChatStore.getState().resetConversation();
   }, []);
 
