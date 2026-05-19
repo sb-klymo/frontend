@@ -22,6 +22,7 @@ import { useState } from "react";
 import { useChatStream } from "@/hooks/useChatStream";
 import { DEV_BUILD } from "@/lib/build-mode";
 import { findPreset, type PolicyPresetId } from "@/lib/policy-presets";
+import { findVoicePreset, type VoicePresetId } from "@/lib/voice-presets";
 import { useChatStore } from "@/stores/chatStore";
 
 import { ChatWindow } from "./ChatWindow";
@@ -37,8 +38,10 @@ import { DevPanel } from "./DevPanel";
  */
 export function ChatRoot({ isTeam = false }: { isTeam?: boolean }) {
   const [policyPreset, setPolicyPreset] = useState<PolicyPresetId>("none");
+  const [voicePreset, setVoicePreset] = useState<VoicePresetId>("default");
   const stream = useChatStream({
     devPolicyOverride: findPreset(policyPreset).config,
+    devVibeOverride: findVoicePreset(voicePreset).config,
   });
   const conversationId = useChatStore((s) => s.conversationId);
 
@@ -58,6 +61,8 @@ export function ChatRoot({ isTeam = false }: { isTeam?: boolean }) {
           error={stream.error}
           policyPreset={policyPreset}
           onPolicyPresetChange={setPolicyPreset}
+          voicePreset={voicePreset}
+          onVoicePresetChange={setVoicePreset}
         />
       )}
       <ChatWindow

@@ -331,6 +331,70 @@ describe("useChatStream", () => {
     expect(body.dev_policy_override).toEqual(override);
   });
 
+  it("omits dev_vibe_override from request body when null", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    const { result } = renderHook(() =>
+      useChatStream({ devVibeOverride: null }),
+    );
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body).not.toHaveProperty("dev_vibe_override");
+  });
+
+  it("forwards dev_vibe_override in request body when set", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    const { result } = renderHook(() =>
+      useChatStream({ devVibeOverride: "neutral" }),
+    );
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.dev_vibe_override).toBe("neutral");
+  });
+
+  it("picks up vibe override changes mid-conversation without restart", async () => {
+    // Same ref-swap pattern as devPolicyOverride: the hook must observe
+    // a fresh `devVibeOverride` on the next send without recreating
+    // `send` (which would tear down the in-flight AbortController).
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    type VibeProps = { vibe: "neutral" | "playful" | null };
+    const { result, rerender } = renderHook<ReturnType<typeof useChatStream>, VibeProps>(
+      ({ vibe }) => useChatStream({ devVibeOverride: vibe }),
+      { initialProps: { vibe: null } },
+    );
+
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(
+      JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string),
+    ).not.toHaveProperty("dev_vibe_override");
+
+    rerender({ vibe: "neutral" });
+    await act(async () => {
+      await result.current.send("again");
+    });
+    expect(
+      JSON.parse((fetchSpy.mock.calls[1]![1] as RequestInit).body as string).dev_vibe_override,
+    ).toBe("neutral");
+  });
+
   // -------------------------------------------------------------------------
   // Selection-turn text buffering
   //
@@ -1014,6 +1078,77 @@ describe("useChatStream", () => {
         removeChannelCallsBefore,
       );
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // PR-4 phase-4 — onboarding_redirect SSE attach
+  // -------------------------------------------------------------------------
+
+  function onboardingRedirectFrame(
+    overrides: Record<string, unknown> = {},
+  ): string {
+    return (
+      "event: onboarding_redirect\ndata: " +
+      JSON.stringify({
+        url: "https://klymo-frontend.vercel.app/onboarding/payment-method",
+        company_name: "Acme Inc.",
+        ...overrides,
+      }) +
+      "\n\n"
+    );
+  }
+
+  it("attaches onboarding details to the last assistant message on event: onboarding_redirect", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockSseResponse([
+        START_FRAME,
+        // Backend emits a rephrased "add a payment method here…" text
+        // bubble + the structured onboarding_redirect event in the
+        // same turn (same shape as booking / checkout_link).
+        'event: message\ndata: {"content":"Last step, Acme Inc. — add a payment method here ↗","node":"onboard"}\n\n',
+        onboardingRedirectFrame(),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"onboarding_payment_redirect"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("keep it");
+    });
+
+    // The assistant message carries the onboarding payload — that's
+    // the signal ChatWindow reads to render OnboardingCard instead of
+    // the text bubble.
+    const last = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(last?.onboarding).toBeDefined();
+    expect(last?.onboarding?.url).toBe(
+      "https://klymo-frontend.vercel.app/onboarding/payment-method",
+    );
+    expect(last?.onboarding?.company_name).toBe("Acme Inc.");
+  });
+
+  it("attaches onboarding even when company_name is missing (backend defensive path)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockSseResponse([
+        START_FRAME,
+        'event: message\ndata: {"content":"Last step — add a payment method here ↗","node":"onboard"}\n\n',
+        onboardingRedirectFrame({ company_name: null }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"onboarding_payment_redirect"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("ok");
+    });
+
+    const last = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(last?.onboarding).toBeDefined();
+    expect(last?.onboarding?.company_name).toBeNull();
   });
 
   it("ignores duffel_order_id morph when payload lacks it (M2 paid-only event)", async () => {

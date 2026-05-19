@@ -62,6 +62,7 @@ type Strings = {
     passengerLabel: string;
     flightLabel: string;
     totalLabel: string;
+    totalFlightTimeLabel: string;
     downloadLabel: string;
   };
   typingIndicator: {
@@ -76,6 +77,13 @@ type Strings = {
     refundLabel: string;
     refundIdLabel: string;
     receiptNote: string;
+  };
+  onboardingCard: {
+    title: string;
+    subtitleWithCompany: (company: string) => string;
+    subtitleGeneric: string;
+    ctaLabel: string;
+    note: string;
   };
   checkoutCard: {
     title: string;
@@ -132,6 +140,7 @@ const EN: Strings = {
     passengerLabel: "Passenger",
     flightLabel: "Flight",
     totalLabel: "Total charged",
+    totalFlightTimeLabel: "Total flight time",
     downloadLabel: "↓ Download ticket",
   },
   cancellationCard: {
@@ -140,6 +149,16 @@ const EN: Strings = {
     refundLabel: "Refunded",
     refundIdLabel: "Refund ID",
     receiptNote: "The refund will land on your card in 5-10 business days.",
+  },
+  onboardingCard: {
+    title: "Last step: save a card",
+    subtitleWithCompany: (company) =>
+      `${company} is all set on the policy side. Add a payment method to finish setup.`,
+    subtitleGeneric:
+      "You're all set on the policy side. Add a payment method to finish setup.",
+    ctaLabel: "Add payment method",
+    note:
+      "Card details are entered into Stripe's secure iframe — they never touch our server. You'll come straight back here when done.",
   },
   checkoutCard: {
     title: "Complete your booking",
@@ -210,6 +229,7 @@ const FR: Strings = {
     passengerLabel: "Passager",
     flightLabel: "Vol",
     totalLabel: "Total prélevé",
+    totalFlightTimeLabel: "Temps de vol total",
     downloadLabel: "↓ Télécharger le billet",
   },
   cancellationCard: {
@@ -218,6 +238,16 @@ const FR: Strings = {
     refundLabel: "Remboursé",
     refundIdLabel: "ID remboursement",
     receiptNote: "Le remboursement apparaîtra sur votre carte sous 5-10 jours ouvrés.",
+  },
+  onboardingCard: {
+    title: "Dernière étape : enregistrer une carte",
+    subtitleWithCompany: (company) =>
+      `${company} est paré côté politique. Ajoutez un moyen de paiement pour finaliser.`,
+    subtitleGeneric:
+      "Tout est paré côté politique. Ajoutez un moyen de paiement pour finaliser.",
+    ctaLabel: "Ajouter un moyen de paiement",
+    note:
+      "Les détails de la carte sont saisis dans l'iframe sécurisée Stripe, ils ne passent jamais par notre serveur. Vous reviendrez ici directement après.",
   },
   checkoutCard: {
     title: "Finalisez votre réservation",

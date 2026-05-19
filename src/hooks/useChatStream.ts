@@ -17,6 +17,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { DisplayedOffer } from "@/types/chat";
+import type { Vibe } from "@/lib/voice-presets";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -47,6 +48,18 @@ export type BookingDetails = {
   amount_cents: number;
   currency: string;
   legs: BookingLeg[];
+  /**
+   * Sum of (arrival - departure) over all booked legs, in whole
+   * minutes. Drives the "Total flight time: 4h 30m" line on
+   * `BookingConfirmationCard`. 2026-05-18 user feedback flagged not
+   * knowing "combien de temps ça prend au total" on round-trip and
+   * multi-destination bookings as a card UX gap.
+   *
+   * Optional on the type so older SSE/REST payloads without the field
+   * still deserialize — the card hides the row when the value is
+   * 0 / undefined.
+   */
+  total_duration_minutes?: number;
 };
 
 /**
@@ -62,6 +75,30 @@ export type CancellationDetails = {
   refund_id: string;
   amount_cents: number;
   currency: string;
+};
+
+/**
+ * Onboarding redirect surfaced via `event: onboarding_redirect` (PR-4
+ * phase-4). Backend emits one when this turn lands
+ * `workflow_stage='onboarding_payment_redirect'` — the third stage of
+ * the conversational signup, parked until the user completes the
+ * Stripe SetupIntent on the existing /onboarding/payment-method page.
+ *
+ * The frontend renders an `OnboardingCard` with a CTA button pointing
+ * at `url`. After the user finishes Stripe, the existing
+ * `PaymentMethodForm` redirects back to `/chat?onboarded=1`; the
+ * chat-side `onboard_node` stage-3 handler reads
+ * `organizations.onboarding_completed_at` on the user's next turn and
+ * transitions the conversation out of the onboarding flow.
+ */
+export type OnboardingDetails = {
+  /** Absolute URL of the Stripe SetupIntent page (sourced from backend
+   * so a future relocation doesn't require a frontend bump). */
+  url: string;
+  /** Echoed back from the user's onboarding draft for the card title.
+   * Optional because the backend defensively passes `None` when the
+   * draft state is missing (shouldn't happen, but safe). */
+  company_name?: string | null;
 };
 
 /**
@@ -138,6 +175,15 @@ export type ChatMessage = {
    */
   cancellation?: CancellationDetails;
   /**
+   * Onboarding-redirect payload attached via the
+   * `event: onboarding_redirect` SSE frame (PR-4 phase-4). When
+   * present, the renderer shows an `OnboardingCard` with a CTA
+   * button pointing at the Stripe SetupIntent page. Mutually
+   * exclusive with the booking-flow cards in practice — onboarding
+   * only fires before any trip has been planned.
+   */
+  onboarding?: OnboardingDetails;
+  /**
    * Backend-assigned bubble identity from the SSE `event: message`
    * payload (`message_id`). For token-streaming chunks from a single
    * LLM call, all deltas share the same id → we APPEND to this
@@ -161,8 +207,9 @@ type ServerEvent =
       footer?: string;
       node?: string;
     }
-  | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[] }
+  | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[]; total_duration_minutes?: number }
   | { type: "checkout_link"; trip_id: string; checkout_url: string; amount_cents: number; currency: string }
+  | { type: "onboarding_redirect"; url: string; company_name?: string | null }
   | {
       type: "cancellation";
       trip_id: string;
@@ -218,10 +265,23 @@ export type UseChatStreamOptions = {
    * don't recreate `send` and tear down its in-flight reader.
    */
   devPolicyOverride?: OrgPolicySettings | null;
+  /**
+   * Dev-only: forward a `Vibe` (neutral | playful) to override the
+   * rephraser's voice register for the duration of one chat turn.
+   * Honoured outside production OR for team-allowlisted users in
+   * production. Same ref pattern as `devPolicyOverride` so swapping
+   * the preset mid-conversation kicks in on the next message without
+   * tearing down any active stream.
+   */
+  devVibeOverride?: Vibe | null;
 };
 
 export function useChatStream(options: UseChatStreamOptions = {}) {
-  const { endpoint = "/api/chat", devPolicyOverride = null } = options;
+  const {
+    endpoint = "/api/chat",
+    devPolicyOverride = null,
+    devVibeOverride = null,
+  } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [workflowStage, setWorkflowStage] = useState<string | null>(null);
@@ -243,6 +303,14 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   useEffect(() => {
     devPolicyOverrideRef.current = devPolicyOverride;
   }, [devPolicyOverride]);
+  // Same ref pattern as devPolicyOverrideRef — swapping the DevPanel
+  // voice toggle mid-conversation must kick in on the next message
+  // without recreating `send` (which would tear down the in-flight
+  // AbortController and reader).
+  const devVibeOverrideRef = useRef<Vibe | null>(devVibeOverride);
+  useEffect(() => {
+    devVibeOverrideRef.current = devVibeOverride;
+  }, [devVibeOverride]);
 
   // Buffer streamed text during selection turns that may end with a
   // booking. Without this, the user sees `select_node` + `checkout_node`
@@ -490,6 +558,24 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
+  const attachOnboarding = useCallback((onboarding: OnboardingDetails) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        // Same turn as the rephrased "add a payment method" text —
+        // augment the assistant message so the renderer shows the
+        // OnboardingCard with the CTA button. Same shape as the
+        // attach* siblings; the card visually replaces the link-in-
+        // text bubble.
+        return [...prev.slice(0, -1), { ...last, onboarding }];
+      }
+      return [
+        ...prev,
+        { id: randomId(), role: "assistant", content: "", onboarding },
+      ];
+    });
+  }, []);
+
   // M2-H3 — auto-morph the CheckoutPaymentCard from "pending" to
   // "paid" when the Stripe webhook fires. We subscribe to Supabase
   // Realtime on `public.transactions` filtered by the most recent
@@ -649,6 +735,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             ...(devPolicyOverrideRef.current !== null
               ? { dev_policy_override: devPolicyOverrideRef.current }
               : {}),
+            ...(devVibeOverrideRef.current !== null
+              ? { dev_vibe_override: devVibeOverrideRef.current }
+              : {}),
           }),
           signal: controller.signal,
         });
@@ -700,6 +789,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   amount_cents: event.amount_cents,
                   currency: event.currency,
                   legs: event.legs,
+                  total_duration_minutes: event.total_duration_minutes,
                 });
                 break;
               case "checkout_link":
@@ -708,6 +798,12 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   checkout_url: event.checkout_url,
                   amount_cents: event.amount_cents,
                   currency: event.currency,
+                });
+                break;
+              case "onboarding_redirect":
+                attachOnboarding({
+                  url: event.url,
+                  company_name: event.company_name,
                 });
                 break;
               case "cancellation":
@@ -816,6 +912,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       attachBooking,
       attachCheckoutLink,
       attachCancellation,
+      attachOnboarding,
     ],
   );
 

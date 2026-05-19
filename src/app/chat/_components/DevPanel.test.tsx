@@ -68,6 +68,8 @@ function defaultProps() {
     error: null as string | null,
     policyPreset: "none" as const,
     onPolicyPresetChange: vi.fn(),
+    voicePreset: "default" as const,
+    onVoicePresetChange: vi.fn(),
   };
 }
 
@@ -273,6 +275,52 @@ describe("DevPanel — policy presets", () => {
       screen.getByTestId("dev-policy-preset-manager_only"),
     ).toHaveAttribute("data-active", "true");
     expect(screen.getByTestId("dev-policy-preset-none")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+  });
+});
+
+describe("DevPanel — voice presets", () => {
+  it("renders the voice section with both preset buttons", () => {
+    renderWithClient(<DevPanel {...defaultProps()} />);
+    const section = screen.getByTestId("dev-voice-section");
+    expect(section).toBeInTheDocument();
+    for (const id of ["default", "classic"]) {
+      expect(screen.getByTestId(`dev-voice-preset-${id}`)).toBeInTheDocument();
+    }
+  });
+
+  it("does not show the Active badge when preset is 'default'", () => {
+    renderWithClient(<DevPanel {...defaultProps()} />);
+    expect(
+      screen.queryByTestId("dev-voice-active-badge"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the Active badge when 'classic' is selected", () => {
+    renderWithClient(
+      <DevPanel {...defaultProps()} voicePreset="classic" />,
+    );
+    expect(screen.getByTestId("dev-voice-active-badge")).toBeInTheDocument();
+  });
+
+  it("clicking a preset calls onVoicePresetChange with the id", () => {
+    const props = defaultProps();
+    renderWithClient(<DevPanel {...props} />);
+    fireEvent.click(screen.getByTestId("dev-voice-preset-classic"));
+    expect(props.onVoicePresetChange).toHaveBeenCalledWith("classic");
+  });
+
+  it("the active preset has data-active=true; the other false", () => {
+    renderWithClient(
+      <DevPanel {...defaultProps()} voicePreset="classic" />,
+    );
+    expect(screen.getByTestId("dev-voice-preset-classic")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    expect(screen.getByTestId("dev-voice-preset-default")).toHaveAttribute(
       "data-active",
       "false",
     );

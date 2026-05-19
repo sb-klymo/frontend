@@ -69,7 +69,15 @@ export function PaymentMethodForm({ initialAutoCharge }: Props) {
       // side. We still proceed to chat; the user can adjust the preference
       // later from settings.
     }
-    router.push("/chat");
+    // PR-4 phase-4 — append `?onboarded=1` so the chat surface knows
+    // the user just returned from completing the SetupIntent. The
+    // conversation is still parked at `onboarding_payment_redirect`;
+    // the user's next message will trigger the backend's stage-3
+    // completion check (which reads `org.onboarding_completed_at` set
+    // by the webhook handler in PR-3). The query param exists for the
+    // frontend to add explicit "welcome back" affordances if needed —
+    // for PR-4 it's a forward-compat hook, not yet acted on.
+    router.push("/chat?onboarded=1");
     router.refresh();
   }
 
