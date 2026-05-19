@@ -10,8 +10,21 @@
  *      `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, so test/live can switch
  *      server-side).
  *   3. On Stripe success: persist the auto-charge toggle to Supabase
- *      `user_metadata` (the backend reads it from the JWT on next
- *      request) and redirect to `/chat`.
+ *      `user_metadata` and render an inline success state telling the
+ *      user to close this tab and return to the original chat tab.
+ *
+ * The original chat tab (opened separately by the OnboardingCard's
+ * `target="_blank"` link) keeps its SSE stream alive — a companion
+ * frontend change subscribes to Supabase Realtime on the user's
+ * payment-method update so the chat auto-advances out of
+ * `onboarding_payment_redirect` without the user typing.
+ *
+ * The previous `router.push("/chat")` behavior is replaced because:
+ *   - The chat tab is still open elsewhere; navigating here would
+ *     create a second chat tab and confuse the user about which one
+ *     holds their conversation.
+ *   - Closing this tab is the natural "I'm done with card setup"
+ *     gesture; reinforce it instead of fighting it.
  *
  * The SetupIntent fetch itself is wrapped in TanStack Query so retry,
  * loading, and error semantics get standard treatment. Toggling
@@ -20,21 +33,46 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { PaymentModeToggle } from "@/components/features/PaymentModeToggle";
 import { StripeCardSetup } from "@/components/features/StripeCardSetup";
+import { strings, type SupportedLanguage } from "@/lib/i18n";
 import { createSetupIntent, PaymentApiError } from "@/lib/api/payment";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 type Props = {
   initialAutoCharge: boolean;
+  /**
+   * Resolved at module load via `navigator.language`. Defaults to
+   * "en" until hydration. Tests pass a fixed value to skip
+   * `navigator` polyfilling.
+   */
+  language?: SupportedLanguage;
 };
 
-export function PaymentMethodForm({ initialAutoCharge }: Props) {
-  const router = useRouter();
+/**
+ * Detect the user's browser language. Returns "fr" if the primary
+ * language tag starts with "fr-"/"fr" (case-insensitive), else "en".
+ * Runs on the client only; SSR returns "en" (the page is a Server
+ * Component but THIS component is "use client", so this is fine).
+ */
+function detectBrowserLanguage(): SupportedLanguage {
+  if (typeof navigator === "undefined") return "en";
+  const primary = navigator.language?.split("-")[0]?.toLowerCase();
+  return primary === "fr" ? "fr" : "en";
+}
+
+export function PaymentMethodForm({
+  initialAutoCharge,
+  language,
+}: Props) {
+  const lang = language ?? detectBrowserLanguage();
+  const t = strings(lang).cardSetupSuccess;
   const [autoCharge, setAutoCharge] = useState(initialAutoCharge);
+  // Drives the post-save inline success state. Replaces the previous
+  // `router.push("/chat")` redirect — the chat lives in another tab.
+  const [setupComplete, setSetupComplete] = useState(false);
 
   const setupIntentQuery = useQuery({
     queryKey: ["payment", "setup-intent"],
@@ -65,20 +103,52 @@ export function PaymentMethodForm({ initialAutoCharge }: Props) {
     try {
       await persistPreference.mutateAsync(autoCharge);
     } catch {
-      // Persistence is best-effort — the card is already saved on Stripe's
-      // side. We still proceed to chat; the user can adjust the preference
-      // later from settings.
+      // Persistence is best-effort — the card is already saved on
+      // Stripe's side. We still show success; the user can adjust
+      // the preference later from settings.
     }
-    // PR-4 phase-4 — append `?onboarded=1` so the chat surface knows
-    // the user just returned from completing the SetupIntent. The
-    // conversation is still parked at `onboarding_payment_redirect`;
-    // the user's next message will trigger the backend's stage-3
-    // completion check (which reads `org.onboarding_completed_at` set
-    // by the webhook handler in PR-3). The query param exists for the
-    // frontend to add explicit "welcome back" affordances if needed —
-    // for PR-4 it's a forward-compat hook, not yet acted on.
-    router.push("/chat?onboarded=1");
-    router.refresh();
+    // Flip the inline success state. The user's chat tab (opened
+    // earlier from the OnboardingCard CTA) listens for the
+    // `setup_intent.succeeded` webhook signal via Supabase Realtime
+    // and advances on its own; this tab just tells the user to
+    // close it and head back.
+    setSetupComplete(true);
+  }
+
+  // Success state takes precedence over loading/error — once the user
+  // saved their card, the SetupIntent query is stale (no longer
+  // needed) and any flicker back to "Preparing form…" would be
+  // confusing. Pin the success view until the user navigates away.
+  if (setupComplete) {
+    return (
+      <div
+        role="status"
+        data-testid="card-setup-success"
+        className="space-y-3 rounded-lg border border-green-200 bg-green-50 p-5 text-center"
+      >
+        <div className="flex items-center justify-center gap-2 text-green-800">
+          <span aria-hidden="true" className="text-lg">
+            ✓
+          </span>
+          <h2 className="text-base font-semibold">{t.title}</h2>
+        </div>
+        <p className="text-sm text-green-900">{t.subtitle}</p>
+        <p className="text-xs text-green-700">{t.closeTabHint}</p>
+        {/*
+          Fallback for users who reached this page directly without a
+          chat tab open (e.g. landed via a stale bookmark). Plain `<a>`
+          with no `target` so it navigates this tab — the only sensible
+          destination when there isn't another tab to switch back to.
+        */}
+        <a
+          href="/chat"
+          className="inline-block text-xs font-medium text-green-700 underline hover:text-green-900"
+          data-testid="card-setup-success-chat-fallback"
+        >
+          {t.fallbackLinkLabel}
+        </a>
+      </div>
+    );
   }
 
   if (setupIntentQuery.isPending) {
