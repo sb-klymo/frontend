@@ -6,10 +6,13 @@ import Link from "next/link";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
+type AccountType = "company" | "individual";
+
 export default function SignupPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("individual");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,6 +25,9 @@ export default function SignupPage() {
     const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: { account_type: accountType },
+      },
     });
 
     setSubmitting(false);
@@ -31,8 +37,6 @@ export default function SignupPage() {
       return;
     }
 
-    // Local Supabase has email confirmations off by default → we get a session
-    // immediately. Hosted projects may require email verification; handle both.
     if (data.session) {
       router.push("/chat");
       router.refresh();
@@ -49,9 +53,46 @@ export default function SignupPage() {
       >
         <h1 className="text-2xl font-bold">Create an account</h1>
 
-        <label className="block text-sm">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">I&apos;m signing up as a…</legend>
+          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 p-3 hover:border-blue-400">
+            <input
+              type="radio"
+              name="accountType"
+              value="individual"
+              checked={accountType === "individual"}
+              onChange={() => setAccountType("individual")}
+              className="mt-1"
+            />
+            <span>
+              <span className="block text-sm font-medium">Personal</span>
+              <span className="block text-xs text-gray-600">
+                Book your own travel independently.
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 p-3 hover:border-blue-400">
+            <input
+              type="radio"
+              name="accountType"
+              value="company"
+              checked={accountType === "company"}
+              onChange={() => setAccountType("company")}
+              className="mt-1"
+            />
+            <span>
+              <span className="block text-sm font-medium">Company</span>
+              <span className="block text-xs text-gray-600">
+                Set up your company on Klymo and invite your team.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <label className="block text-sm" htmlFor="email">
           Email
           <input
+            id="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -60,9 +101,10 @@ export default function SignupPage() {
           />
         </label>
 
-        <label className="block text-sm">
+        <label className="block text-sm" htmlFor="password">
           Password
           <input
+            id="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
