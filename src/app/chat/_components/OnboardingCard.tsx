@@ -49,14 +49,27 @@ export function OnboardingCard({
 
       {/*
         External link — opens the Vercel-hosted Stripe SetupIntent page
-        in the same tab so the existing PaymentMethodForm's
-        `router.push("/chat?onboarded=1")` post-success redirect lands
-        the user back here. Using `next/link` would proxy through the
-        Next.js router and lose the standalone-page semantics; a plain
-        `<a>` is the right primitive.
+        in a NEW tab (`target="_blank"`) so the chat conversation stays
+        intact in the original tab while the user completes card setup.
+        This matters in two scenarios:
+          1. Local dev: the chat runs on localhost but the payment page
+             is hosted on Vercel — a same-tab redirect to a different
+             origin loses the localhost session, bouncing the user to
+             /login. Coming back to localhost then drops the chat
+             entirely.
+          2. Production: even on a single domain, navigating away from
+             /chat unmounts the streaming connection. New-tab keeps the
+             SSE thread alive so any `setup_intent.succeeded` webhook
+             that resumes the LangGraph thread can land back into the
+             still-open chat without a refresh.
+        `rel="noopener noreferrer"` is the standard hardening for
+        `target="_blank"` (prevents the new tab from reverse-navigating
+        the opener via `window.opener`).
       */}
       <a
         href={onboarding.url}
+        target="_blank"
+        rel="noopener noreferrer"
         className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
         data-testid="onboarding-cta"
       >
