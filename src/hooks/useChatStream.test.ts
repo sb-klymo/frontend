@@ -331,6 +331,70 @@ describe("useChatStream", () => {
     expect(body.dev_policy_override).toEqual(override);
   });
 
+  it("omits dev_vibe_override from request body when null", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    const { result } = renderHook(() =>
+      useChatStream({ devVibeOverride: null }),
+    );
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body).not.toHaveProperty("dev_vibe_override");
+  });
+
+  it("forwards dev_vibe_override in request body when set", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    const { result } = renderHook(() =>
+      useChatStream({ devVibeOverride: "neutral" }),
+    );
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.dev_vibe_override).toBe("neutral");
+  });
+
+  it("picks up vibe override changes mid-conversation without restart", async () => {
+    // Same ref-swap pattern as devPolicyOverride: the hook must observe
+    // a fresh `devVibeOverride` on the next send without recreating
+    // `send` (which would tear down the in-flight AbortController).
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+    type VibeProps = { vibe: "neutral" | "playful" | null };
+    const { result, rerender } = renderHook<ReturnType<typeof useChatStream>, VibeProps>(
+      ({ vibe }) => useChatStream({ devVibeOverride: vibe }),
+      { initialProps: { vibe: null } },
+    );
+
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(
+      JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string),
+    ).not.toHaveProperty("dev_vibe_override");
+
+    rerender({ vibe: "neutral" });
+    await act(async () => {
+      await result.current.send("again");
+    });
+    expect(
+      JSON.parse((fetchSpy.mock.calls[1]![1] as RequestInit).body as string).dev_vibe_override,
+    ).toBe("neutral");
+  });
+
   // -------------------------------------------------------------------------
   // Selection-turn text buffering
   //
