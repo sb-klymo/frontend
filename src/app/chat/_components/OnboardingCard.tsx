@@ -5,11 +5,18 @@
  * SSE frame the backend emits when a turn lands
  * `workflow_stage='onboarding_payment_redirect'`.
  *
- * Visually distinct from `CheckoutPaymentCard` (indigo here vs amber
- * there) so the user reads onboarding as "first-time setup" rather
- * than "complete an in-flight booking". Indigo is also unused by any
- * other card — keeps the visual vocabulary unambiguous (green=done,
- * amber=action-required-on-trip, gray=cancelled, indigo=onboarding).
+ * Two render states gated on `onboarding.completed`:
+ *   - false (default): indigo CTA card prompting the user to save a card
+ *   - true: green "Payment method saved" state with no CTA. Flipped
+ *     by `markOnboardingComplete` in `useChatStream` when Realtime
+ *     observes the `users.stripe_payment_method_id` UPDATE from the
+ *     Stripe webhook handler.
+ *
+ * Visually distinct from `CheckoutPaymentCard` (indigo/green here vs
+ * amber there) so the user reads onboarding as "first-time setup"
+ * rather than "complete an in-flight booking". The morph from indigo
+ * (action-required) to green (done) mirrors the M2-H3 booking-card
+ * morph pattern.
  *
  * Pure presentational. No hooks, no browser APIs — same Server-
  * Component-friendly contract as the sibling cards even though it
@@ -29,7 +36,35 @@ export function OnboardingCard({
   language = "en",
 }: OnboardingCardProps) {
   const t = strings(language).onboardingCard;
-  const company = onboarding.company_name?.trim() || null;
+
+  // Saved state — green, no CTA, no security note (irrelevant now).
+  // Reached after Realtime morph flips `completed=true` on the
+  // attached onboarding payload. The card stays in the chat history
+  // but is no longer actionable.
+  if (onboarding.completed) {
+    return (
+      <div
+        className="rounded-lg border border-green-200 bg-green-50 p-4 shadow-sm"
+        data-testid="onboarding-card"
+        data-completed="true"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-green-700" aria-hidden="true">
+            ✓
+          </span>
+          <h3 className="text-sm font-semibold text-green-900">
+            {t.savedTitle}
+          </h3>
+        </div>
+        <p
+          className="mt-2 text-xs text-green-800"
+          data-testid="onboarding-subtitle"
+        >
+          {t.savedSubtitle}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -44,7 +79,7 @@ export function OnboardingCard({
       </div>
 
       <p className="mt-2 text-xs text-gray-700" data-testid="onboarding-subtitle">
-        {company ? t.subtitleWithCompany(company) : t.subtitleGeneric}
+        {t.subtitle}
       </p>
 
       {/*

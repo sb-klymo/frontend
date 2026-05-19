@@ -15,17 +15,16 @@ function _onboarding(
   };
 }
 
-describe("OnboardingCard", () => {
-  it("renders title + company-aware subtitle + CTA link", () => {
+describe("OnboardingCard — pending state (default)", () => {
+  it("renders title + subtitle + CTA link", () => {
     render(<OnboardingCard onboarding={_onboarding()} />);
 
-    // Title + body text the user sees.
     expect(screen.getByRole("heading", { name: /save a card/i })).toBeInTheDocument();
+    // Subtitle is now generic (no company-name interpolation). The
+    // 2026-05-19 simplification dropped the policy-side phrasing
+    // because it didn't apply to personal users.
     expect(screen.getByTestId("onboarding-subtitle").textContent ?? "").toMatch(
-      /Acme Inc\./,
-    );
-    expect(screen.getByTestId("onboarding-subtitle").textContent ?? "").toMatch(
-      /policy/i,
+      /payment method/i,
     );
 
     // CTA points at the backend-supplied URL (no hardcoding here).
@@ -37,22 +36,15 @@ describe("OnboardingCard", () => {
     expect(cta.textContent ?? "").toMatch(/Add payment method/i);
   });
 
-  it("falls back to a generic subtitle when no company_name is present", () => {
-    // Backend sends `company_name: None` when the onboarding draft
-    // was missing somehow (defensive path). Card must not render
-    // "undefined" or a stray "null" — fall back cleanly.
-    render(<OnboardingCard onboarding={_onboarding({ company_name: null })} />);
+  it("subtitle does not mention 'policy' (regression: live 2026-05-19)", () => {
+    // The old subtitle said '{company} is all set on the policy side'
+    // / 'Harold est paré côté politique' which doesn't apply to
+    // personal users (no policy). Simplified to a single neutral
+    // sentence in both flows.
+    render(<OnboardingCard onboarding={_onboarding()} />);
     const subtitle = screen.getByTestId("onboarding-subtitle").textContent ?? "";
-    expect(subtitle).not.toMatch(/null|undefined/i);
-    expect(subtitle).toMatch(/policy/i);
-  });
-
-  it("falls back to generic subtitle when company_name is empty / whitespace", () => {
-    render(<OnboardingCard onboarding={_onboarding({ company_name: "   " })} />);
-    const subtitle = screen.getByTestId("onboarding-subtitle").textContent ?? "";
-    // Whitespace-only must not produce "   is all set on the policy side."
-    expect(subtitle).not.toMatch(/^\s+is/);
-    expect(subtitle).toMatch(/policy/i);
+    expect(subtitle).not.toMatch(/policy/i);
+    expect(subtitle).not.toMatch(/politique/i);
   });
 
   it("renders FR labels when language='fr'", () => {
@@ -63,18 +55,13 @@ describe("OnboardingCard", () => {
     expect(screen.getByTestId("onboarding-cta").textContent ?? "").toMatch(
       /Ajouter un moyen de paiement/i,
     );
-    // Subtitle in FR weaves the company name in too.
-    expect(screen.getByTestId("onboarding-subtitle").textContent ?? "").toMatch(
-      /Acme Inc\./,
-    );
+    const subtitle = screen.getByTestId("onboarding-subtitle").textContent ?? "";
+    // No reference to 'côté politique' (the live-bug wording).
+    expect(subtitle).not.toMatch(/politique/i);
+    expect(subtitle).toMatch(/moyen de paiement/i);
   });
 
   it("opens the CTA link in a new tab with safe rel attributes", () => {
-    // Same-tab navigation drops the localhost session when the payment
-    // page is hosted on a different origin (Vercel) and unmounts the
-    // SSE chat connection even on a single domain in prod. New-tab is
-    // the right behavior for both. `rel="noopener noreferrer"` is the
-    // standard hardening for `target="_blank"`.
     render(<OnboardingCard onboarding={_onboarding()} />);
     const cta = screen.getByTestId("onboarding-cta");
     expect(cta).toHaveAttribute("target", "_blank");
@@ -85,10 +72,54 @@ describe("OnboardingCard", () => {
   it("renders the security / round-trip note", () => {
     render(<OnboardingCard onboarding={_onboarding()} />);
     const note = screen.getByTestId("onboarding-note").textContent ?? "";
-    // The note must mention Stripe (security signal) AND the return
-    // expectation ("you'll come back here") — both load-bearing for
-    // user trust during the redirect.
     expect(note).toMatch(/Stripe/i);
     expect(note).toMatch(/back/i);
+  });
+});
+
+describe("OnboardingCard — saved state (after Realtime morph)", () => {
+  it("renders saved title + saved subtitle when completed=true", () => {
+    render(<OnboardingCard onboarding={_onboarding({ completed: true })} />);
+    expect(
+      screen.getByRole("heading", { name: /payment method saved/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("onboarding-subtitle").textContent ?? "").toMatch(
+      /all set/i,
+    );
+  });
+
+  it("does NOT render the CTA button in saved state", () => {
+    // The card stays in chat history but loses its actionable
+    // affordance — the conversation has moved past this step.
+    render(<OnboardingCard onboarding={_onboarding({ completed: true })} />);
+    expect(screen.queryByTestId("onboarding-cta")).toBeNull();
+  });
+
+  it("does NOT render the security note in saved state", () => {
+    // The "card details go through Stripe iframe" copy is meaningful
+    // only when the user is ABOUT TO enter card details. After save,
+    // it's irrelevant noise.
+    render(<OnboardingCard onboarding={_onboarding({ completed: true })} />);
+    expect(screen.queryByTestId("onboarding-note")).toBeNull();
+  });
+
+  it("uses the `data-completed` attribute so morphing can be asserted by callers", () => {
+    render(<OnboardingCard onboarding={_onboarding({ completed: true })} />);
+    expect(screen.getByTestId("onboarding-card")).toHaveAttribute(
+      "data-completed",
+      "true",
+    );
+  });
+
+  it("renders FR saved labels when language='fr'", () => {
+    render(
+      <OnboardingCard
+        onboarding={_onboarding({ completed: true })}
+        language="fr"
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: /moyen de paiement enregistré/i }),
+    ).toBeInTheDocument();
   });
 });
