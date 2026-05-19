@@ -489,6 +489,56 @@ describe("useChatStream", () => {
     expect(lastAssistant?.content).not.toContain("Parfait, on part sur l'option 1");
   });
 
+  it("surfaces select AND extras text as separate bubbles when both fire on a selection turn (PR-63 regression fix)", async () => {
+    // Live bug (2026-05-19): post-PR-63, after the user picks an
+    // option, the bot emits BOTH a select_node ack ('Nickel, option
+    // 1...') AND an extras_node prompt ('Autre chose pour ce
+    // voyage ?'). Both got buffered (no card lands on this turn) but
+    // the old flush logic was an OR-chain `checkout || select ||
+    // other` — selectText took priority, extras was silently
+    // dropped. User saw the ack and nothing else, conversation
+    // appeared dead.
+    //
+    // Fix: each non-empty buffer surfaces as its own bubble, in
+    // node order (select → other → checkout).
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: message\ndata: {"content":"Nickel, option 1 Air Stub à 08:00. Je vous cale ça tout de suite…","node":"select"}\n\n',
+          'event: typing\ndata: {"node":"extras"}\n\n',
+          'event: message\ndata: {"content":"Autre chose pour ce voyage ? Sièges, bagages, priorité ?","node":"extras"}\n\n',
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_extras_choice"}\n\n',
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("vol Marseille demain");
+    });
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    const assistantMessages = result.current.messages.filter(
+      (m) => m.role === "assistant",
+    );
+    // No card landed → both bubbles surface, in node order.
+    const lastTwo = assistantMessages.slice(-2);
+    expect(lastTwo).toHaveLength(2);
+    expect(lastTwo[0]?.content).toContain("Nickel, option 1");
+    expect(lastTwo[1]?.content).toContain("Autre chose pour ce voyage");
+    // The extras prompt MUST be visible — that was the regression.
+    const allContent = assistantMessages.map((m) => m.content).join("|");
+    expect(allContent).toContain("Autre chose pour ce voyage");
+  });
+
   it("flushes buffered text as a bubble when no booking arrives (round-trip stage 1)", async () => {
     // Stage 1 of round-trip: user picks departure → bot says "Departure
     // locked, pick a return". No booking event; the text MUST appear so
