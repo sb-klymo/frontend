@@ -116,6 +116,12 @@ type Strings = {
     subtitle: string;
     returnToChatNote: string;
   };
+  cardSetupSuccess: {
+    title: string;
+    subtitle: string;
+    closeTabHint: string;
+    fallbackLinkLabel: string;
+  };
 };
 
 const EN: Strings = {
@@ -198,6 +204,13 @@ const EN: Strings = {
       "No charge was made. You can try again from your chat at any time.",
     returnToChatNote:
       "You can close this tab — your chat is still open in the original window.",
+  },
+  cardSetupSuccess: {
+    title: "Card saved",
+    subtitle:
+      "Your payment method is ready. We've notified your chat — your conversation continues there.",
+    closeTabHint: "You can close this tab.",
+    fallbackLinkLabel: "Open the chat in this tab",
   },
   typingIndicator: {
     thinking: "Thinking…",
@@ -286,6 +299,13 @@ const FR: Strings = {
     subtitle: "Aucun montant n'a été prélevé. Vous pouvez réessayer depuis le chat.",
     returnToChatNote:
       "Vous pouvez fermer cet onglet — votre chat est toujours ouvert dans la fenêtre d'origine.",
+  },
+  cardSetupSuccess: {
+    title: "Carte enregistrée",
+    subtitle:
+      "Votre moyen de paiement est prêt. Nous avons prévenu votre chat — votre conversation continue là-bas.",
+    closeTabHint: "Vous pouvez fermer cet onglet.",
+    fallbackLinkLabel: "Ouvrir le chat dans cet onglet",
   },
   typingIndicator: {
     thinking: "Réflexion en cours…",
