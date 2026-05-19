@@ -218,7 +218,16 @@ type ServerEvent =
       amount_cents: number;
       currency: string;
     }
-  | { type: "done"; workflow_stage: string | null; conversation_id: string }
+  | {
+      type: "done";
+      workflow_stage: string | null;
+      conversation_id: string;
+      // Sticky language from the backend's `state.detected_language`
+      // (set by `resolve_sticky_language` in klymo_personality.py).
+      // null on turns before the first FR signal lands; the frontend
+      // falls back to its own regex detection in that case.
+      detected_language?: "fr" | "en" | null;
+    }
   | { type: "error"; code: string; message: string };
 
 function randomId(): string {
@@ -285,6 +294,12 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [workflowStage, setWorkflowStage] = useState<string | null>(null);
+  // Backend-authoritative sticky language, captured from `event: done`.
+  // null until the backend reports a value (first turn before any FR
+  // signal, or a turn that didn't go through the language resolver).
+  // When set, takes precedence over the frontend's regex fallback —
+  // single source of truth aligned with the bot's `phrase()` rephraser.
+  const [backendLanguage, setBackendLanguage] = useState<SupportedLanguage | null>(null);
   // L3-suivi 2 (UI polish) — flips true on `event: typing` and back
   // to false on the next `event: message`. Used by ChatWindow to
   // render a typing indicator BETWEEN consecutive assistant bubbles
@@ -818,6 +833,13 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               case "done":
                 setConversationId(event.conversation_id);
                 setWorkflowStage(event.workflow_stage);
+                // Capture the backend's sticky language if surfaced.
+                // Stays unchanged otherwise so a later turn that the
+                // backend couldn't classify doesn't flip the UI back
+                // to fallback semantics.
+                if (event.detected_language === "fr" || event.detected_language === "en") {
+                  setBackendLanguage(event.detected_language);
+                }
                 // Clear any lingering between-bubbles typing indicator
                 // — the turn is over, no more bubbles are coming.
                 setIsBubblePending(false);
@@ -925,28 +947,35 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     setMessages([]);
     setError(null);
     setWorkflowStage(null);
+    setBackendLanguage(null);
     useChatStore.getState().resetConversation();
   }, []);
 
-  // Sticky language detection across the whole conversation: once
-  // French is observed in ANY user message, the static UI labels stay
-  // French even when subsequent replies are language-neutral
-  // (single-token names, "ok", "1000"). Mirrors the backend's
-  // `resolve_sticky_language` semantic in klymo_personality.py so the
-  // bot's rephrased text and the React-rendered cards never flip
-  // mid-conversation.
+  // Resolved language with the backend as source of truth:
+  //   1. If the backend has surfaced `detected_language` via `event:
+  //      done`, use it. That's the same sticky value the bot's
+  //      `phrase()` rephraser used — single source of truth.
+  //   2. Otherwise (first turn before any done frame, or the backend
+  //      never set the value), fall back to a regex scan over the
+  //      whole conversation. Once FR is observed anywhere it stays.
+  //      This is a heuristic that drifts slightly from the backend
+  //      (the frontend regex may not catch every word the backend's
+  //      LLM-rephraser would) but it's the best we can do before the
+  //      first done frame arrives.
   //
   // Pre-fix bug (2026-05-19): only the most recent user message was
-  // scanned, so typing "comment ça marche ?" (FR) then "Harold" (neutral)
-  // caused the OnboardingCard to render in English on the Harold turn.
-  //
-  // No manual `useMemo`: React Compiler (Next 16+) auto-memoizes pure
-  // derivations of inputs.
-  const language: SupportedLanguage = messages.some(
-    (m) => m.role === "user" && detectLanguage(m.content) === "fr",
-  )
-    ? "fr"
-    : "en";
+  // scanned AND the regex missed common greetings ("bonjour"), so a
+  // user opening with "bonjour" → "Harold" rendered the
+  // OnboardingCard in English. Backend-sourced language closes the
+  // gap because the bot's own sticky-language decision is what we
+  // surface.
+  const language: SupportedLanguage =
+    backendLanguage ??
+    (messages.some(
+      (m) => m.role === "user" && detectLanguage(m.content) === "fr",
+    )
+      ? "fr"
+      : "en");
 
   return {
     messages,

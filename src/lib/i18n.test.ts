@@ -30,6 +30,23 @@ describe("detectLanguage", () => {
     expect(detectLanguage("nous voudrions un vol")).toBe("fr");
   });
 
+  it("returns 'fr' for common greetings (regression 2026-05-19)", () => {
+    // Live bug: a user opening with "bonjour" then a language-neutral
+    // reply ("Harold") never latched onto FR because greetings
+    // weren't in the function-word list. The OnboardingCard rendered
+    // in English despite the bot speaking French throughout. The
+    // backend's resolve_sticky_language has these too — must stay in
+    // sync (i18n.ts MUST mirror klymo_personality.py's regex).
+    expect(detectLanguage("bonjour")).toBe("fr");
+    expect(detectLanguage("Bonjour")).toBe("fr");
+    expect(detectLanguage("BONJOUR")).toBe("fr");
+    expect(detectLanguage("salut")).toBe("fr");
+    expect(detectLanguage("bonsoir")).toBe("fr");
+    expect(detectLanguage("coucou")).toBe("fr");
+    expect(detectLanguage("oui")).toBe("fr");
+    expect(detectLanguage("ouais")).toBe("fr");
+  });
+
   it("returns 'fr' for time/article/day/month words (regression for live bug)", () => {
     // "Milan → Marseille la semaine prochaine" had no diacritic and no
     // word from the original list. Expanded to cover French-only time,
