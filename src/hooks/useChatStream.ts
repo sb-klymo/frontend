@@ -47,6 +47,18 @@ export type BookingDetails = {
   amount_cents: number;
   currency: string;
   legs: BookingLeg[];
+  /**
+   * Sum of (arrival - departure) over all booked legs, in whole
+   * minutes. Drives the "Total flight time: 4h 30m" line on
+   * `BookingConfirmationCard`. 2026-05-18 user feedback flagged not
+   * knowing "combien de temps ça prend au total" on round-trip and
+   * multi-destination bookings as a card UX gap.
+   *
+   * Optional on the type so older SSE/REST payloads without the field
+   * still deserialize — the card hides the row when the value is
+   * 0 / undefined.
+   */
+  total_duration_minutes?: number;
 };
 
 /**
@@ -161,7 +173,7 @@ type ServerEvent =
       footer?: string;
       node?: string;
     }
-  | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[] }
+  | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[]; total_duration_minutes?: number }
   | { type: "checkout_link"; trip_id: string; checkout_url: string; amount_cents: number; currency: string }
   | {
       type: "cancellation";
@@ -700,6 +712,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   amount_cents: event.amount_cents,
                   currency: event.currency,
                   legs: event.legs,
+                  total_duration_minutes: event.total_duration_minutes,
                 });
                 break;
               case "checkout_link":

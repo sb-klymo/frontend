@@ -62,6 +62,7 @@ type Strings = {
     passengerLabel: string;
     flightLabel: string;
     totalLabel: string;
+    totalFlightTimeLabel: string;
     downloadLabel: string;
   };
   typingIndicator: {
@@ -132,6 +133,7 @@ const EN: Strings = {
     passengerLabel: "Passenger",
     flightLabel: "Flight",
     totalLabel: "Total charged",
+    totalFlightTimeLabel: "Total flight time",
     downloadLabel: "↓ Download ticket",
   },
   cancellationCard: {
@@ -210,6 +212,7 @@ const FR: Strings = {
     passengerLabel: "Passager",
     flightLabel: "Vol",
     totalLabel: "Total prélevé",
+    totalFlightTimeLabel: "Temps de vol total",
     downloadLabel: "↓ Télécharger le billet",
   },
   cancellationCard: {
