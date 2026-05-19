@@ -886,21 +886,27 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 // — the turn is over, no more bubbles are coming.
                 setIsBubblePending(false);
                 // Flush per-node buffers if this was a buffered turn.
-                // Three cases handled below:
+                // Two cases:
                 //   1. A card landed (booking or checkout_link) — flush
                 //      ONLY the checkout_node text as a NEW assistant
                 //      message right after the card. Drop the
                 //      select_node ack ("Got it, option 2 at 12:00…")
                 //      since the card already says all that.
-                //   2. No card landed AND we have checkout_node text
-                //      (K1 failure path: "Hmm, your card was
-                //      declined…") — flush that into the existing
-                //      bubble. Failure messages from checkout matter
-                //      more than the duplicate select ack.
-                //   3. No card landed AND we only have select_node
-                //      text (round-trip stage 1: "Got the 8:00 flight,
-                //      now pick a return") — flush that into the
-                //      existing bubble.
+                //   2. No card landed — flush each non-empty buffer as
+                //      its OWN distinct bubble in node order
+                //      (select → extras/other → checkout). Pre-PR-63
+                //      this used to be a priority OR-chain
+                //      (`checkout || select || other`) picking ONE,
+                //      because only one buffer was ever non-empty on a
+                //      no-card turn. After PR-63 inserted extras_node
+                //      between select and checkout, the SAME no-card
+                //      turn can fill TWO buffers (select_node ack +
+                //      extras_node prompt) and dropping either is the
+                //      bug we're fixing here: live 2026-05-19, the
+                //      extras prompt 'Autre chose pour ce voyage ?'
+                //      was silently dropped because selectText took
+                //      priority. Each non-empty buffer is its own
+                //      bubble for natural multi-bubble reading order.
                 if (bufferingTurnRef.current) {
                   const checkoutText = bufferedCheckoutTextRef.current;
                   const selectText = bufferedSelectTextRef.current;
@@ -928,22 +934,28 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                       }
                       return prev;
                     }
-                    // Cases 2 + 3 — no card. Prefer checkout > select
-                    // > other so failure messages and stage-2 prompts
-                    // surface cleanly. Concatenated into the last
-                    // assistant bubble if present, else new bubble.
-                    const content = checkoutText || selectText || otherText;
-                    if (!content) return prev;
-                    if (last?.role === "assistant") {
-                      return [
-                        ...prev.slice(0, -1),
-                        { ...last, content: last.content + content },
-                      ];
-                    }
-                    return [
-                      ...prev,
-                      { id: randomId(), role: "assistant", content },
-                    ];
+                    // Case 2 — no card. Surface each non-empty buffer
+                    // as its own distinct bubble in node order. Order
+                    // matches the SSE arrival order on a typical
+                    // select→extras turn: select_node ack first
+                    // ('Nickel, option 1...'), extras_node prompt
+                    // second ('Autre chose pour ce voyage ?'). The
+                    // checkout buffer only reaches this branch on the
+                    // K1-failure no-card path; it lands last as the
+                    // bot's final word ('Hmm, your card was
+                    // declined.'). Empty buffers are skipped.
+                    const bubbleTexts = [
+                      selectText,
+                      otherText,
+                      checkoutText,
+                    ].filter((text) => text.trim() !== "");
+                    if (bubbleTexts.length === 0) return prev;
+                    const newBubbles: ChatMessage[] = bubbleTexts.map((text) => ({
+                      id: randomId(),
+                      role: "assistant",
+                      content: text,
+                    }));
+                    return [...prev, ...newBubbles];
                   });
                 }
                 break;
