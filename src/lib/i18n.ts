@@ -32,7 +32,7 @@ const FRENCH_DIACRITICS = /[àâäéèêëîïôöùûüÿçœæ]/i;
 // is deliberately excluded (overlaps with the planet); diacritic months
 // are caught by FRENCH_DIACRITICS instead of being duplicated here.
 const FRENCH_FUNCTION_WORDS =
-  /\b(je|tu|nous|vous|pour|avec|dans|partir|aller|veux|voudrais|combien|quand|aujourd'hui|demain|moins|plus|aéroport|aeroport|comment|merci|annule|change|en fait|ça|cela|c'est|fait|premier|première|deuxième|troisième|semaine|semaines|mois|jour|jours|soir|soirs|matin|matins|nuit|nuits|midi|minuit|prochain|prochaine|prochains|prochaines|dernier|derniers|du|des|au|aux|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|janvier|avril|mai|juin|juillet|septembre|octobre|novembre)\b/i;
+  /\b(je|tu|nous|vous|pour|avec|dans|partir|aller|veux|voudrais|combien|quand|aujourd'hui|demain|moins|plus|aéroport|aeroport|comment|merci|annule|change|en fait|ça|cela|c'est|fait|premier|première|deuxième|troisième|bonjour|bonsoir|salut|coucou|oui|ouais|semaine|semaines|mois|jour|jours|soir|soirs|matin|matins|nuit|nuits|midi|minuit|prochain|prochaine|prochains|prochaines|dernier|derniers|du|des|au|aux|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|janvier|avril|mai|juin|juillet|septembre|octobre|novembre)\b/i;
 
 export function detectLanguage(text: string | null | undefined): SupportedLanguage {
   if (!text) return "en";
