@@ -1431,6 +1431,259 @@ describe("auto-trigger on event:booking", () => {
 });
 
 // =============================================================================
+// useChatStream — approval resume listener (Task 14)
+// =============================================================================
+//
+// On chat mount, the hook fires GET /api/me/pending-approvals and
+// auto-dispatches POST /api/chat/resume-approval for each decided row
+// (status !== "pending"). A ref-based dedup set prevents double-firing
+// for the same approval_request_id across StrictMode double-invocations
+// or HMR re-mounts.
+//
+// The fetch is deferred via setTimeout(0) so it never consumes
+// positional mockResolvedValueOnce slots meant for the chat SSE stream.
+// Tests here use vi.useFakeTimers() to control when the fetch fires.
+// =============================================================================
+
+describe("useChatStream — approval resume listener", () => {
+  beforeEach(() => {
+    useChatStore.getState().resetConversation();
+    vi.restoreAllMocks();
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  /**
+   * Build a mock pending-approvals response with the given rows.
+   */
+  function pendingApprovalsResponse(
+    rows: Array<{
+      id: string;
+      conversation_id: string;
+      status: string;
+      decided_at?: string | null;
+    }>,
+  ): Response {
+    return new Response(JSON.stringify(rows), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("auto-dispatches /chat/resume-approval when /me/pending-approvals returns a decided row", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      // Call 1 (pending-approvals): one approved row
+      .mockResolvedValueOnce(
+        pendingApprovalsResponse([
+          {
+            id: "approval-uuid-1",
+            conversation_id: "conv-approved-1",
+            status: "approved",
+            decided_at: "2026-05-21T10:00:00Z",
+          },
+        ]),
+      )
+      // Call 2 (resume-approval SSE): return 204 (nothing to continue)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { result } = renderHook(() => useChatStream());
+
+    // Explicitly call checkPendingApprovals (mirrors how the chat component
+    // calls it in its own useEffect on mount).
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    // Pending-approvals call was made.
+    const pendingCall = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/me/pending-approvals",
+    );
+    expect(pendingCall).toBeDefined();
+
+    // resume-approval call was dispatched for the decided row.
+    await waitFor(() => {
+      const resumeCall = fetchSpy.mock.calls.find(
+        (c) => c[0] === "/api/chat/resume-approval",
+      );
+      expect(resumeCall).toBeDefined();
+      const body = JSON.parse((resumeCall![1] as RequestInit).body as string);
+      expect(body.conversation_id).toBe("conv-approved-1");
+    });
+    void result; // suppress unused warning
+  });
+
+  it("does NOT dispatch when all rows are still pending", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        pendingApprovalsResponse([
+          {
+            id: "approval-uuid-still-pending",
+            conversation_id: "conv-still-pending",
+            status: "pending",
+          },
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    // Pending-approvals was fetched.
+    const pendingCallCheck = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/me/pending-approvals",
+    );
+    expect(pendingCallCheck).toBeDefined();
+
+    // resume-approval was NOT called because the row is still pending.
+    const resumeCall = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/chat/resume-approval",
+    );
+    expect(resumeCall).toBeUndefined();
+    void result;
+  });
+
+  it("does NOT dispatch twice for the same approval_request_id (dedup guard)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      // First checkPendingApprovals call: one decided row
+      .mockResolvedValueOnce(
+        pendingApprovalsResponse([
+          {
+            id: "approval-uuid-dedup",
+            conversation_id: "conv-dedup",
+            status: "rejected",
+            decided_at: "2026-05-21T09:00:00Z",
+          },
+        ]),
+      )
+      // resume-approval call: 204
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      // Second checkPendingApprovals call: same row returned again
+      .mockResolvedValueOnce(
+        pendingApprovalsResponse([
+          {
+            id: "approval-uuid-dedup",
+            conversation_id: "conv-dedup",
+            status: "rejected",
+            decided_at: "2026-05-21T09:00:00Z",
+          },
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+
+    // First call — fires resume-approval.
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    const resumeCallsAfterFirst = fetchSpy.mock.calls.filter(
+      (c) => c[0] === "/api/chat/resume-approval",
+    ).length;
+    expect(resumeCallsAfterFirst).toBe(1);
+
+    // Second call — same row, should be deduped by the ref guard.
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    // Still only 1 resume-approval call — the ref guard prevented a second dispatch.
+    const resumeCallsAfterSecond = fetchSpy.mock.calls.filter(
+      (c) => c[0] === "/api/chat/resume-approval",
+    ).length;
+    expect(resumeCallsAfterSecond).toBe(1);
+    void result;
+  });
+
+  it("handles expired and canceled rows in addition to approved/rejected", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        pendingApprovalsResponse([
+          {
+            id: "approval-expired",
+            conversation_id: "conv-expired",
+            status: "expired",
+            decided_at: null,
+          },
+          {
+            id: "approval-canceled",
+            conversation_id: "conv-canceled",
+            status: "canceled",
+            decided_at: null,
+          },
+        ]),
+      )
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    await waitFor(() => {
+      const resumeCalls = fetchSpy.mock.calls.filter(
+        (c) => c[0] === "/api/chat/resume-approval",
+      );
+      // Both expired and canceled rows triggered a resume.
+      expect(resumeCalls.length).toBe(2);
+      const bodies = resumeCalls.map(
+        (c) => JSON.parse((c[1] as RequestInit).body as string) as { conversation_id: string },
+      );
+      const convIds = bodies.map((b) => b.conversation_id);
+      expect(convIds).toContain("conv-expired");
+      expect(convIds).toContain("conv-canceled");
+    });
+    void result;
+  });
+
+  it("degrades silently when /me/pending-approvals returns non-200", async () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: "unauthorized" }), { status: 401 }),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    // No resume-approval dispatch.
+    const resumeCall = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/chat/resume-approval",
+    );
+    expect(resumeCall).toBeUndefined();
+    // No crash, no user-visible error.
+    expect(result.current.error).toBeNull();
+    consoleSpy.mockRestore();
+  });
+});
+
+// =============================================================================
 // Auto-trigger on Realtime booking confirmation (Plan B / M2-bis)
 // =============================================================================
 

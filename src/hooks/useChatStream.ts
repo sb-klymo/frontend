@@ -441,6 +441,15 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   // stale state (same ref pattern as workflowStageRef above).
   const conversationIdRef = useRef<string | null>(null);
 
+  // Dedup guard for the pending-approval auto-resume listener (Task 14).
+  // Tracks which approval_request IDs have already triggered a
+  // resumeApproval call so that React StrictMode double-invocation and
+  // HMR effect re-runs don't fire the backend resume twice.
+  // MUST be a ref (not state) — using useState here would cause a
+  // re-render each time an id is added, which would tear down and
+  // re-mount the effect and re-trigger the very fetch we're deduping.
+  const firedApprovalResumesRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     workflowStageRef.current = workflowStage;
   }, [workflowStage]);
@@ -783,6 +792,147 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     },
     [appendAssistantChunk, setConversationId],
   );
+
+  /**
+   * Task 14 — re-enter the approval_required graph node for a conversation
+   * where the manager has already decided (approved / rejected / expired).
+   *
+   * Called automatically on chat mount when /me/pending-approvals returns
+   * a row with status !== "pending". Mirrors resumeExtras exactly: same
+   * SSE consumption, same appendAssistantChunk callbacks. No booking /
+   * extras-specific side effects — the approval_required node emits a
+   * text bubble (extras prompt for approved, polite-cancel for rejected).
+   *
+   * Dedup: the caller guards with firedApprovalResumesRef so this function
+   * is only invoked once per approval_request_id per page lifetime.
+   */
+  const resumeApproval = useCallback(
+    async (convId: string) => {
+      try {
+        const response = await fetch("/api/chat/resume-approval", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: convId }),
+        });
+
+        // 204: nothing to resume (graph not parked at awaiting_approval,
+        // or decision already consumed) — silent no-op.
+        if (response.status === 204) {
+          return;
+        }
+
+        // Non-success: degrade silently (manager already decided; the
+        // Realtime hook from Task 13 has already morphed the card).
+        if (!response.ok || !response.body) {
+          console.warn(`[resumeApproval] backend returned ${response.status}`);
+          return;
+        }
+
+        // 200 OK: pipe the SSE stream into the message buffer.
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            const event = parseSseFrame(part);
+            if (!event) continue;
+            switch (event.type) {
+              case "start":
+                // A resume turn may update the conversation_id; keep
+                // the store in sync so subsequent sends use the right thread.
+                setConversationId(event.conversation_id);
+                break;
+              case "message":
+                setIsBubblePending(false);
+                appendAssistantChunk(event.content, event.node, event.message_id);
+                break;
+              case "typing":
+                setIsBubblePending(true);
+                break;
+              case "done":
+                setConversationId(event.conversation_id);
+                if (event.workflow_stage) {
+                  setWorkflowStage(event.workflow_stage);
+                }
+                if (event.detected_language === "fr" || event.detected_language === "en") {
+                  setBackendLanguage(event.detected_language);
+                }
+                setIsBubblePending(false);
+                break;
+              case "error":
+                // Degrade silently — the Realtime card morph (Task 13)
+                // already surfaced the decision visually.
+                console.warn("[resumeApproval] SSE error frame:", event.message);
+                setIsBubblePending(false);
+                break;
+              default:
+                // booking / checkout_link / options are not expected from
+                // resume-approval — ignore safely.
+                break;
+            }
+          }
+        }
+      } catch (error) {
+        // Network errors / aborts: silent (the Realtime morph already
+        // surfaced the decision; the resume bubble is best-effort).
+        console.warn("[resumeApproval] error:", error);
+      }
+    },
+    [appendAssistantChunk, setConversationId],
+  );
+
+  /**
+   * Task 14 — check /me/pending-approvals and auto-dispatch
+   * /chat/resume-approval for any approval row that was decided while the
+   * user was offline.
+   *
+   * LOAD-BEARING CASE: the user was OFFLINE when the manager decided.
+   * Realtime (Task 13) never delivered the UPDATE, so the ApprovalPendingCard
+   * still shows "pending". This poll catches the gap and resumes the
+   * conversation from the approval_required graph node.
+   *
+   * When the user IS online, both paths fire in parallel:
+   *   - Realtime (Task 13) morphs the card instantly (visual).
+   *   - This call fires resumeApproval → backend emits the next bubble (text).
+   * No conflict — they update different pieces of UI.
+   *
+   * The firedApprovalResumesRef dedup set prevents double-firing across React
+   * StrictMode double-invocations and HMR re-mounts.
+   *
+   * USAGE: the consuming component calls this once on mount:
+   *   ```tsx
+   *   const { checkPendingApprovals } = useChatStream();
+   *   useEffect(() => { void checkPendingApprovals(); }, [checkPendingApprovals]);
+   *   ```
+   */
+  const checkPendingApprovals = useCallback(async () => {
+    try {
+      const response = await fetch("/api/me/pending-approvals");
+      if (!response.ok) return;
+      const approvals = (await response.json()) as Array<{
+        id: string;
+        conversation_id: string;
+        status: ApprovalStatus;
+        decided_at?: string | null;
+      }>;
+      for (const approval of approvals) {
+        // Only fire for decided rows — pending rows are still waiting.
+        if (approval.status === "pending") continue;
+        // Skip if we've already fired for this approval in this session.
+        if (firedApprovalResumesRef.current.has(approval.id)) continue;
+        firedApprovalResumesRef.current.add(approval.id);
+        void resumeApproval(approval.conversation_id);
+      }
+    } catch (error) {
+      console.warn("[pending-approvals] error:", error);
+    }
+  }, [resumeApproval]);
 
   // M2-H3 — auto-morph the CheckoutPaymentCard from "pending" to
   // "paid" when the Stripe webhook fires. We subscribe to Supabase
@@ -1288,6 +1438,11 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     // Clear the once-per-user guard so a fresh onboarding cycle in
     // the same tab can re-fire the Realtime resume.
     resumedOnboardingForUserRef.current = null;
+    // Clear the approval-resume dedup set so a conversation reset
+    // allows the next checkPendingApprovals() call to re-fire for
+    // any rows it previously processed (in case the user starts a
+    // new session with the same approval ids still present).
+    firedApprovalResumesRef.current.clear();
     useChatStore.getState().resetConversation();
   }, []);
 
@@ -1326,6 +1481,8 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     stop,
     reset,
     resumeExtras,
+    resumeApproval,
+    checkPendingApprovals,
     language,
     workflowStage,
   };
