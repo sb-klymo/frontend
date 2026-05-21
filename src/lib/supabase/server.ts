@@ -7,7 +7,30 @@
  */
 
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+
+/**
+ * Service-role Supabase client — bypasses RLS.
+ *
+ * Use ONLY in server-side code (Server Components, Route Handlers) where you
+ * need to read rows that RLS would block for the current user, but you then
+ * perform your own auth checks in code before returning any data to the client.
+ *
+ * NEVER expose the service role key to the browser.
+ */
+export function createSupabaseAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    },
+  );
+}
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();

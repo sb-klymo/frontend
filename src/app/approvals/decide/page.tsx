@@ -35,7 +35,7 @@
 
 import { redirect } from "next/navigation";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 
 import { DecideForm } from "./DecideForm";
 import {
@@ -136,8 +136,13 @@ export default async function ApprovalsDecidePage({ searchParams }: PageProps) {
     redirect("/login");
   }
 
-  // 3. Fetch the approval row (RLS: visible to org admins + the requester)
-  const { data: approvalData, error: approvalError } = await supabase
+  // 3. Fetch the approval row using the service-role client to bypass RLS.
+  //    The ?id= UUID is unguessable; authentication + org/role checks follow
+  //    in steps 7-9 before any action is allowed. The service-role query here
+  //    only determines WHICH error page to render — it never exposes data to
+  //    an unauthorized user (the rendering is server-side only).
+  const adminClient = createSupabaseAdminClient();
+  const { data: approvalData, error: approvalError } = await adminClient
     .from("approval_requests")
     .select(
       "id, requesting_user_id, org_id, status, expires_at, total_amount_cents, currency, offer_snapshot, policy_reason, decided_by_user_id, decided_at, decision_reason",
@@ -146,7 +151,7 @@ export default async function ApprovalsDecidePage({ searchParams }: PageProps) {
     .single<ApprovalRow>();
 
   if (approvalError || !approvalData) {
-    // Row not found OR RLS blocked access — treat as broken link.
+    // Row not found — treat as broken link.
     return <InvalidTokenPage />;
   }
 
