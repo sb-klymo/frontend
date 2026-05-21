@@ -1657,6 +1657,72 @@ describe("useChatStream — approval resume listener", () => {
     void result;
   });
 
+  it("skips approval rows with null conversation_id (does not pollute dedup set)", async () => {
+    // Fix 2 guard: conversation_id is UUID | None on the backend schema.
+    // A null value means the thread has not been created yet — resumeApproval
+    // must NOT be called, and the approval id must NOT enter the dedup set
+    // (so the next poll can attempt to resume once a conversation_id appears).
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        pendingApprovalsResponse([
+          {
+            id: "approval-null-conv",
+            conversation_id: null as unknown as string, // null from backend
+            status: "approved",
+            decided_at: "2026-05-21T12:00:00Z",
+          },
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    // resume-approval must NOT be called when conversation_id is null.
+    const resumeCall = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/chat/resume-approval",
+    );
+    expect(resumeCall).toBeUndefined();
+
+    // IMPORTANT: the dedup set must also be empty — the id must NOT be added
+    // so that a subsequent poll (after conversation_id becomes non-null) can
+    // still fire the resume.
+    // We verify indirectly: run checkPendingApprovals again with a real
+    // conversation_id for the same approval id — it must fire this time.
+    fetchSpy
+      .mockResolvedValueOnce(
+        pendingApprovalsResponse([
+          {
+            id: "approval-null-conv",
+            conversation_id: "conv-now-exists",
+            status: "approved",
+            decided_at: "2026-05-21T12:00:00Z",
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await act(async () => {
+      await result.current.checkPendingApprovals();
+    });
+
+    await waitFor(() => {
+      const resumeCallAfterFix = fetchSpy.mock.calls.find(
+        (c) => c[0] === "/api/chat/resume-approval",
+      );
+      expect(resumeCallAfterFix).toBeDefined();
+      const body = JSON.parse(
+        (resumeCallAfterFix![1] as RequestInit).body as string,
+      ) as { conversation_id: string };
+      expect(body.conversation_id).toBe("conv-now-exists");
+    });
+
+    void result;
+  });
+
   it("degrades silently when /me/pending-approvals returns non-200", async () => {
     const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 

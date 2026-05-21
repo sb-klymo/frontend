@@ -808,11 +808,14 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
    */
   const resumeApproval = useCallback(
     async (convId: string) => {
+      const controller = new AbortController();
+
       try {
         const response = await fetch("/api/chat/resume-approval", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ conversation_id: convId }),
+          signal: controller.signal,
         });
 
         // 204: nothing to resume (graph not parked at awaiting_approval,
@@ -917,13 +920,17 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       if (!response.ok) return;
       const approvals = (await response.json()) as Array<{
         id: string;
-        conversation_id: string;
+        conversation_id: string | null;
         status: ApprovalStatus;
         decided_at?: string | null;
       }>;
       for (const approval of approvals) {
         // Only fire for decided rows — pending rows are still waiting.
         if (approval.status === "pending") continue;
+        // Guard: conversation_id is UUID | None on the backend schema.
+        // A null value means there is no thread to resume yet — skip
+        // it rather than polluting the dedup set with an un-resumable id.
+        if (!approval.conversation_id) continue;
         // Skip if we've already fired for this approval in this session.
         if (firedApprovalResumesRef.current.has(approval.id)) continue;
         firedApprovalResumesRef.current.add(approval.id);
@@ -1481,7 +1488,6 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     stop,
     reset,
     resumeExtras,
-    resumeApproval,
     checkPendingApprovals,
     language,
     workflowStage,

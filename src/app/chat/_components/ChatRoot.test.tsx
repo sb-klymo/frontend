@@ -30,7 +30,6 @@ vi.mock("@/hooks/useChatStream", () => ({
     stop: vi.fn(),
     reset: vi.fn(),
     resumeExtras: vi.fn(),
-    resumeApproval: vi.fn(),
     checkPendingApprovals: mockCheckPendingApprovals,
   }),
 }));
@@ -86,18 +85,19 @@ describe("ChatRoot", () => {
   });
 
   it("does not call checkPendingApprovals more than once on a stable mount", async () => {
-    render(<ChatRoot />);
+    // Render without React.StrictMode so effects fire exactly once (as in
+    // production). toBe(1) would fail if the effect dep became unstable and
+    // re-fired on every render — the whole point of this test.
+    const { unmount } = render(<ChatRoot />, { wrapper: undefined });
 
     await waitFor(() => {
-      expect(mockCheckPendingApprovals).toHaveBeenCalled();
+      expect(mockCheckPendingApprovals).toHaveBeenCalledTimes(1);
     });
 
-    // Allow any microtasks to settle — the count must not grow beyond
-    // the initial call (React StrictMode double-invocation aside; in
-    // production React only runs effects once per mount).
+    // Allow any microtasks to settle — count must remain at exactly 1.
     await new Promise((r) => setTimeout(r, 50));
-    // In StrictMode Vitest runs effects twice; cap at 2 to cover both
-    // modes without over-constraining.
-    expect(mockCheckPendingApprovals.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(mockCheckPendingApprovals.mock.calls.length).toBe(1);
+
+    unmount();
   });
 });
