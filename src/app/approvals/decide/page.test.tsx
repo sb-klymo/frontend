@@ -15,6 +15,7 @@ import {
   InvalidTokenPage,
   TokenExpiredPage,
   ApprovalAlreadyDecidedPage,
+  ApprovalCanceledPage,
   NotAuthorizedToApprovePage,
   CannotApproveOwnBookingPage,
 } from "./error-states";
@@ -93,6 +94,18 @@ describe("error-states renderers", () => {
   it("CannotApproveOwnBookingPage renders self-approval message", () => {
     render(<CannotApproveOwnBookingPage />);
     expect(screen.getByText(/can't approve your own booking/i)).toBeInTheDocument();
+  });
+
+  it("ApprovalCanceledPage renders canceled message with requester first name", () => {
+    render(<ApprovalCanceledPage requesterFirstName="Alice" />);
+    expect(screen.getByText(/This request was canceled/i)).toBeInTheDocument();
+    expect(screen.getByText(/Alice canceled this request/i)).toBeInTheDocument();
+  });
+
+  it("ApprovalCanceledPage renders generic canceled message when no name is provided", () => {
+    render(<ApprovalCanceledPage />);
+    expect(screen.getByText(/This request was canceled/i)).toBeInTheDocument();
+    expect(screen.getByText(/The requester canceled this request/i)).toBeInTheDocument();
   });
 });
 
@@ -244,7 +257,7 @@ describe("DecideForm submit error states", () => {
     );
   });
 
-  it("shows ApprovalAlreadyDecidedPage on 409", async () => {
+  it("shows ApprovalAlreadyDecidedPage on 409 with no meta (race condition)", async () => {
     mockFetch(409, { code: "approval_already_decided" });
     render(<DecideForm {...defaultProps()} />);
 
@@ -252,10 +265,12 @@ describe("DecideForm submit error states", () => {
       fireEvent.click(screen.getByTestId("approve-button"));
     });
 
-    // When meta is not present, falls back to InvalidTokenPage
+    // When meta is absent, shows a neutral "already decided" page — not an
+    // invalid-token page. A 409 is a race condition, not a broken link.
     await waitFor(() =>
-      expect(screen.getByText(/broken or has been tampered/i)).toBeInTheDocument(),
+      expect(screen.getByText(/already approved/i)).toBeInTheDocument(),
     );
+    expect(screen.getByText(/another approver/i)).toBeInTheDocument();
   });
 
   it("shows CannotApproveOwnBookingPage on 403 + cannot_approve_own_booking code", async () => {

@@ -83,16 +83,13 @@ export function DecideForm({
       case "token_expired":
         return <TokenExpiredPage />;
       case "already_decided":
-        if (ui.alreadyDecidedMeta) {
-          return (
-            <ApprovalAlreadyDecidedPage
-              decider={ui.alreadyDecidedMeta.decider}
-              decidedAt={ui.alreadyDecidedMeta.decidedAt}
-              decision={ui.alreadyDecidedMeta.decision}
-            />
-          );
-        }
-        return <InvalidTokenPage />;
+        return (
+          <ApprovalAlreadyDecidedPage
+            decider={ui.alreadyDecidedMeta?.decider ?? "another approver"}
+            decidedAt={ui.alreadyDecidedMeta?.decidedAt}
+            decision={ui.alreadyDecidedMeta?.decision ?? "approved"}
+          />
+        );
       case "not_authorized":
         return <NotAuthorizedToApprovePage />;
       case "cannot_self_approve":

@@ -40,6 +40,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { DecideForm } from "./DecideForm";
 import {
   ApprovalAlreadyDecidedPage,
+  ApprovalCanceledPage,
   CannotApproveOwnBookingPage,
   InvalidTokenPage,
   NotAuthorizedToApprovePage,
@@ -154,6 +155,13 @@ export default async function ApprovalsDecidePage({ searchParams }: PageProps) {
   // 4. Check approval status
   if (approval.status === "expired") {
     return <TokenExpiredPage />;
+  }
+
+  if (approval.status === "canceled") {
+    // The requester withdrew the request. We don't have their first name yet at
+    // this point in the flow (name fetch happens in step 10), so we pass
+    // undefined and let ApprovalCanceledPage use the generic fallback.
+    return <ApprovalCanceledPage />;
   }
 
   if (approval.status !== "pending") {

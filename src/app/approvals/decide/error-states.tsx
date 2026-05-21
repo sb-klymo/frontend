@@ -73,8 +73,9 @@ export function TokenExpiredPage() {
 type AlreadyDecidedProps = {
   /** Display name (or email) of the person who made the decision. */
   decider: string;
-  /** ISO-8601 timestamp of when the decision was made. */
-  decidedAt: string;
+  /** ISO-8601 timestamp of when the decision was made. May be undefined when
+   *  the decision details are unknown (e.g. race-condition 409 with no meta). */
+  decidedAt?: string;
   /** "approved" | "rejected" */
   decision: "approved" | "rejected";
 };
@@ -89,6 +90,23 @@ export function ApprovalAlreadyDecidedPage({
   decision,
 }: AlreadyDecidedProps) {
   const verb = decision === "approved" ? "approved" : "rejected";
+
+  // decidedAt may be absent when the 409 response contains no metadata (race
+  // condition). Render a shorter, accurate message in that case.
+  if (!decidedAt) {
+    return (
+      <ErrorCard
+        title={`This request was already ${verb}`}
+        body={
+          <p>
+            This approval request was just decided by{" "}
+            <strong>{decider}</strong>. No further action is needed.
+          </p>
+        }
+      />
+    );
+  }
+
   const formattedDate = new Date(decidedAt).toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -102,6 +120,29 @@ export function ApprovalAlreadyDecidedPage({
           This approval request was already <strong>{verb}</strong> by{" "}
           <strong>{decider}</strong> at {formattedDate}. No further action is
           needed.
+        </p>
+      }
+    />
+  );
+}
+
+type CanceledProps = {
+  /** First name of the person who made the booking request, if known. */
+  requesterFirstName?: string;
+};
+
+/**
+ * Shown when approval.status is 'canceled' — the requester withdrew the
+ * request before an approver acted on it.
+ */
+export function ApprovalCanceledPage({ requesterFirstName }: CanceledProps) {
+  const name = requesterFirstName ?? "The requester";
+  return (
+    <ErrorCard
+      title="This request was canceled"
+      body={
+        <p>
+          {name} canceled this request. No further action needed.
         </p>
       }
     />
