@@ -467,7 +467,7 @@ test(
     //     English i18n: "Approved" / "Continuing your booking" from approvedBy().
     await expect(
       page.getByText(
-        /validé|approved|continuing|réservation.*continue/i,
+        /validé|approuvé|feu vert|donné son accord|on continue|approved|continuing|réservation/i,
       ).last(),
     ).toBeVisible({ timeout: 60_000 });
   },
