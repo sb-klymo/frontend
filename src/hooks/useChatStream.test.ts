@@ -1468,6 +1468,53 @@ describe("useChatStream — approval resume listener", () => {
     vi.useRealTimers();
   });
 
+  // -------------------------------------------------------------------------
+  // Phase 6 — `event: approval_required`
+  // -------------------------------------------------------------------------
+
+  it("attaches approvalRequest field when SSE event: approval_required arrives", async () => {
+    const approvalFrame =
+      "event: approval_required\ndata: " +
+      JSON.stringify({
+        id: "approval-uuid-123",
+        total: 250.0,
+        currency: "EUR",
+        expires_at: "2026-06-01T12:00:00+00:00",
+        approver_emails: ["boss@acme.com"],
+        policy_reason: "Amount exceeds cap",
+        status: "pending",
+        decision_reason: null,
+        decided_at: null,
+        decided_by_first_name: null,
+      }) +
+      "\n\n";
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        'event: message\ndata: {"content":"Your manager has been notified.","node":"approval_required"}\n\n',
+        approvalFrame,
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_approval"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("vol Paris → New York demain");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(lastAssistant?.approvalRequest).toBeDefined();
+    expect(lastAssistant?.approvalRequest?.id).toBe("approval-uuid-123");
+    expect(lastAssistant?.approvalRequest?.total).toBe(250.0);
+    expect(lastAssistant?.approvalRequest?.currency).toBe("EUR");
+    expect(lastAssistant?.approvalRequest?.approver_emails).toEqual(["boss@acme.com"]);
+    expect(lastAssistant?.approvalRequest?.status).toBe("pending");
+    expect(lastAssistant?.approvalRequest?.policy_reason).toBe("Amount exceeds cap");
+  });
+
   /**
    * Build a mock pending-approvals response with the given rows.
    */

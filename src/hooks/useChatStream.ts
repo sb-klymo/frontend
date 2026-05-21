@@ -277,6 +277,19 @@ type ServerEvent =
       currency: string;
     }
   | {
+      type: "approval_required";
+      id: string;
+      total: number;
+      currency: string;
+      expires_at: string;
+      approver_emails: string[];
+      policy_reason: string | null;
+      status: ApprovalStatus;
+      decision_reason?: string | null;
+      decided_at?: string | null;
+      decided_by_first_name?: string | null;
+    }
+  | {
       type: "done";
       workflow_stage: string | null;
       conversation_id: string;
@@ -665,6 +678,30 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       ];
     });
   }, []);
+
+  // Phase 6 — attach the ApprovalPendingCard to the last assistant
+  // message when `event: approval_required` arrives. Mirrors the
+  // `attachBooking` / `attachCancellation` / `attachOnboarding`
+  // siblings: same-turn text bubble is augmented in place; if no
+  // prior assistant message exists a card-only message is created.
+  const attachApprovalRequest = useCallback(
+    (approvalRequest: ApprovalRequestDetails) => {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant") {
+          // Same turn as the "Your manager has been notified…" text —
+          // augment so the renderer shows ApprovalPendingCard in addition
+          // to (or instead of) the plain text bubble.
+          return [...prev.slice(0, -1), { ...last, approvalRequest }];
+        }
+        return [
+          ...prev,
+          { id: randomId(), role: "assistant", content: "", approvalRequest },
+        ];
+      });
+    },
+    [],
+  );
 
   // Realtime morph for the OnboardingCard — pairs with `markCheckoutPaid`
   // (M2-H3) but on the onboarding flow. Walks `messages` backwards to
@@ -1218,6 +1255,20 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   currency: event.currency,
                 });
                 break;
+              case "approval_required":
+                attachApprovalRequest({
+                  id: event.id,
+                  total: event.total,
+                  currency: event.currency,
+                  expires_at: event.expires_at,
+                  approver_emails: event.approver_emails,
+                  policy_reason: event.policy_reason,
+                  status: event.status,
+                  decision_reason: event.decision_reason,
+                  decided_at: event.decided_at,
+                  decided_by_first_name: event.decided_by_first_name,
+                });
+                break;
               case "done":
                 setConversationId(event.conversation_id);
                 currentConversationId = event.conversation_id;
@@ -1336,6 +1387,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       attachCheckoutLink,
       attachCancellation,
       attachOnboarding,
+      attachApprovalRequest,
       resumeExtras,
     ],
   );
