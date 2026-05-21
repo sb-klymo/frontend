@@ -1228,3 +1228,311 @@ describe("useChatStream", () => {
     expect(fetchSpy.mock.calls.length).toBe(fetchCallsBefore);
   });
 });
+
+// =============================================================================
+// resumeExtras — unit tests
+// =============================================================================
+
+describe("resumeExtras", () => {
+  beforeEach(() => {
+    useChatStore.getState().resetConversation();
+    vi.restoreAllMocks();
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("calls POST /api/chat/resume-extras with the correct body", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.resumeExtras("conv-123");
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chat/resume-extras",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ conversation_id: "conv-123" }),
+      }),
+    );
+  });
+
+  it("silently no-ops on 204 (no messages added)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    const messagesBefore = result.current.messages.length;
+
+    await act(async () => {
+      await result.current.resumeExtras("conv-204");
+    });
+
+    expect(result.current.messages.length).toBe(messagesBefore);
+  });
+
+  it("pipes SSE frames into the message buffer on 200", async () => {
+    const ssePayload =
+      'event: message\ndata: {"content":"Souhaitez-vous ajouter des bagages ?"}\n\n' +
+      'event: done\ndata: {"conversation_id":"conv-200","workflow_stage":"awaiting_extras_choice"}\n\n';
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockSseResponse([ssePayload]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.resumeExtras("conv-200");
+    });
+
+    const lastAssistant = result.current.messages.findLast(
+      (m) => m.role === "assistant",
+    );
+    expect(lastAssistant?.content).toContain("Souhaitez-vous ajouter des bagages");
+    expect(result.current.workflowStage).toBe("awaiting_extras_choice");
+  });
+
+  it("silently degrades on non-200 non-204 (messages unchanged)", async () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("server error", { status: 500 }),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    const messagesBefore = result.current.messages.length;
+
+    await act(async () => {
+      await result.current.resumeExtras("conv-500");
+    });
+
+    expect(result.current.messages.length).toBe(messagesBefore);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("500"));
+  });
+
+  it("silently fails on network error (does not throw)", async () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+
+    const { result } = renderHook(() => useChatStream());
+    const messagesBefore = result.current.messages.length;
+
+    // Should not throw
+    await act(async () => {
+      await result.current.resumeExtras("conv-err");
+    });
+
+    expect(result.current.messages.length).toBe(messagesBefore);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "[resumeExtras] error:",
+      expect.any(Error),
+    );
+  });
+});
+
+// =============================================================================
+// Auto-trigger on event:booking (K1 SSE path)
+// =============================================================================
+
+describe("auto-trigger on event:booking", () => {
+  beforeEach(() => {
+    useChatStore.getState().resetConversation();
+    vi.restoreAllMocks();
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fires resumeExtras with the active conversation_id after a booking SSE event", async () => {
+    vi.useFakeTimers();
+
+    // First call: the main chat SSE stream with event:booking.
+    // Second call: the resume-extras endpoint — returns 204 (nothing to fire).
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          "event: booking\ndata: " +
+            JSON.stringify({
+              trip_id: "tr-auto",
+              booking_reference: "STUBAUTO",
+              passenger_name: "Jean Dupont",
+              amount_cents: 45000,
+              currency: "EUR",
+              legs: [],
+            }) +
+            "\n\n",
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"completed"}\n\n',
+        ]),
+      )
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    // Before the timer fires, resumeExtras should not yet have been called.
+    const callsAfterSend = fetchSpy.mock.calls.length;
+    // The SSE send call is #1, resume-extras fires after 300 ms.
+    expect(callsAfterSend).toBe(1);
+
+    // Advance the 300 ms timer.
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      // Allow promises spawned by the timer to settle.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchSpy.mock.calls.length).toBe(2);
+    const resumeCall = fetchSpy.mock.calls[1]!;
+    expect(resumeCall[0]).toBe("/api/chat/resume-extras");
+    const body = JSON.parse((resumeCall[1] as RequestInit).body as string);
+    expect(body.conversation_id).toBe("conv-1");
+
+    vi.useRealTimers();
+  });
+});
+
+// =============================================================================
+// Auto-trigger on Realtime booking confirmation (Plan B / M2-bis)
+// =============================================================================
+
+describe("auto-trigger on Realtime duffel_order_id (Plan B)", () => {
+  beforeEach(() => {
+    useChatStore.getState().resetConversation();
+    vi.restoreAllMocks();
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fires resumeExtras with the active conversation_id when duffel_order_id arrives", async () => {
+    vi.useFakeTimers();
+
+    const bookingDetails = {
+      trip_id: "tr-plan-b-resume",
+      booking_reference: "PNRRESUME",
+      passenger_name: "Jane Doe",
+      amount_cents: 60000,
+      currency: "EUR",
+      legs: [],
+    };
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      // Call 1: main chat SSE (delivers checkoutLink → opens Realtime channel)
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          "event: checkout_link\ndata: " +
+            JSON.stringify({
+              trip_id: "tr-plan-b-resume",
+              checkout_url: "https://checkout.stripe.com/c/pay/cs_test_resume",
+              amount_cents: 60000,
+              currency: "EUR",
+            }) +
+            "\n\n",
+          'event: done\ndata: {"conversation_id":"conv-planb","workflow_stage":"payment_pending"}\n\n',
+        ]),
+      )
+      // Call 2: fetchAndAttachBooking (triggered by duffel_order_id in Realtime UPDATE)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(bookingDetails), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      // Call 3: resumeExtras (304 — nothing to fire)
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.send("option 1");
+    });
+
+    // At this point we have conv-planb from the done event, and the Realtime
+    // channel is alive waiting for the Stripe webhook.
+    expect(lastPostgresChangesHandler).toBeTruthy();
+    const fetchCallsAfterSend = fetchSpy.mock.calls.length;
+
+    // Simulate the Realtime UPDATE carrying duffel_order_id.
+    await act(async () => {
+      lastPostgresChangesHandler!({
+        new: { status: "paid", duffel_order_id: "ord_resume_test" },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // fetchAndAttachBooking fired immediately (call #2).
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(fetchCallsAfterSend);
+
+    // resumeExtras fires after 300 ms.
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Find the resume-extras call.
+    const resumeCall = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/chat/resume-extras",
+    );
+    expect(resumeCall).toBeDefined();
+    const body = JSON.parse((resumeCall![1] as RequestInit).body as string);
+    expect(body.conversation_id).toBe("conv-planb");
+
+    vi.useRealTimers();
+  });
+});

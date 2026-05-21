@@ -385,10 +385,18 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   const setConversationId = useChatStore((s) => s.setConversationId);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const setStreaming = useChatStore((s) => s.setStreaming);
+  // Mirror of conversationId in a ref so the Realtime handler (and
+  // resumeExtras) can read the current value without re-closing over
+  // stale state (same ref pattern as workflowStageRef above).
+  const conversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     workflowStageRef.current = workflowStage;
   }, [workflowStage]);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
 
   const appendAssistantChunk = useCallback(
     (content: string, node?: string, messageId?: string) => {
@@ -626,6 +634,105 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     });
   }, []);
 
+  /**
+   * Fire-and-forget resume after any booking confirmation (K1 auto-charge
+   * and Plan B Realtime path). Calls `POST /api/chat/resume-extras` which
+   * proxies to the backend `POST /chat/resume-extras`.
+   *
+   * Responses:
+   *   204 — nothing to fire (no pending extras intent, or already applied).
+   *         Silent no-op. Booking is the primary success event; extras are
+   *         an optional follow-up.
+   *   200 — backend fired the extras turn; stream the SSE response into the
+   *         message buffer using the same parseSseFrame + state-update logic
+   *         as send().
+   *   Other — silent failure (warn only). The booking is already confirmed;
+   *            degraded extras UX is acceptable.
+   *
+   * Called with a 300 ms delay so the BookingConfirmationCard renders first
+   * and the extras catalogue bubble follows naturally.
+   */
+  const resumeExtras = useCallback(
+    async (convId: string) => {
+      const controller = new AbortController();
+
+      try {
+        const response = await fetch("/api/chat/resume-extras", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: convId }),
+          signal: controller.signal,
+        });
+
+        // 204: no extras intent pending — silent no-op.
+        if (response.status === 204) {
+          return;
+        }
+
+        // Non-success: degrade silently (booking is confirmed).
+        if (!response.ok || !response.body) {
+          console.warn(`[resumeExtras] backend returned ${response.status}`);
+          return;
+        }
+
+        // 200 OK: pipe the SSE stream into the message buffer.
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            const event = parseSseFrame(part);
+            if (!event) continue;
+            switch (event.type) {
+              case "start":
+                // A resume turn may mint a new conversation_id; update
+                // the store so subsequent sends use the same thread.
+                setConversationId(event.conversation_id);
+                break;
+              case "message":
+                setIsBubblePending(false);
+                appendAssistantChunk(event.content, event.node, event.message_id);
+                break;
+              case "typing":
+                setIsBubblePending(true);
+                break;
+              case "done":
+                setConversationId(event.conversation_id);
+                if (event.workflow_stage) {
+                  setWorkflowStage(event.workflow_stage);
+                }
+                if (event.detected_language === "fr" || event.detected_language === "en") {
+                  setBackendLanguage(event.detected_language);
+                }
+                setIsBubblePending(false);
+                break;
+              case "error":
+                // Degrade silently — extras failure doesn't affect the
+                // confirmed booking.
+                console.warn("[resumeExtras] SSE error frame:", event.message);
+                setIsBubblePending(false);
+                break;
+              default:
+                // Booking / checkout_link / cancellation / options are
+                // not expected from resume-extras, but ignore safely.
+                break;
+            }
+          }
+        }
+      } catch (error) {
+        // Network errors / aborts: silent (booking is confirmed).
+        console.warn("[resumeExtras] error:", error);
+      }
+    },
+    [appendAssistantChunk, setConversationId],
+  );
+
   // M2-H3 — auto-morph the CheckoutPaymentCard from "pending" to
   // "paid" when the Stripe webhook fires. We subscribe to Supabase
   // Realtime on `public.transactions` filtered by the most recent
@@ -714,6 +821,15 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             // PDF download without a refresh.
             if (next.duffel_order_id) {
               void fetchAndAttachBooking(pendingTripId, attachBooking);
+              // Auto-trigger extras-resume after Plan B booking confirmation,
+              // mirroring the K1 SSE path. 300 ms delay lets the
+              // BookingConfirmationCard morph render first.
+              const convIdAtBooking = conversationIdRef.current;
+              if (convIdAtBooking) {
+                setTimeout(() => {
+                  void resumeExtras(convIdAtBooking);
+                }, 300);
+              }
             }
             // Plan B can also END with PR 6's refund safety net or a
             // J4/J5 chain failure — `transactions.status` flips to a
@@ -744,7 +860,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       // websocket close runs async on the supabase-js side.
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [pendingTripId, markCheckoutPaid, attachBooking, markBookingFailed]);
+  }, [pendingTripId, markCheckoutPaid, attachBooking, markBookingFailed, resumeExtras]);
 
   const send = useCallback(
     async (userText: string, options: { silent?: boolean } = {}) => {
@@ -806,6 +922,13 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        // Track the active conversation_id locally within this turn's stream
+        // loop so we can pass it to resumeExtras when `event: booking` fires.
+        // `conversationId` from the closure may be null on the very first send
+        // (it's set by `event: start`, but the closure holds the pre-render
+        // value). `currentConversationId` is updated synchronously from the
+        // stream so resumeExtras always uses the correct thread id.
+        let currentConversationId: string | null = conversationId;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -822,6 +945,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             switch (event.type) {
               case "start":
                 setConversationId(event.conversation_id);
+                currentConversationId = event.conversation_id;
                 break;
               case "message":
                 // Clear the between-bubbles typing indicator the
@@ -848,6 +972,20 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   legs: event.legs,
                   total_duration_minutes: event.total_duration_minutes,
                 });
+                // Auto-trigger the extras-resume endpoint after booking
+                // confirmation. 300 ms delay lets the BookingConfirmationCard
+                // render first; the extras catalogue bubble follows naturally.
+                // `void` silences the floating-promise lint rule — resumeExtras
+                // degrades silently on any failure (booking is already confirmed).
+                // `currentConversationId` is preferred over the closure's
+                // `conversationId` because the latter is null on the first
+                // send (before any done frame updates the store + re-render).
+                if (currentConversationId) {
+                  const convIdAtBooking = currentConversationId;
+                  setTimeout(() => {
+                    void resumeExtras(convIdAtBooking);
+                  }, 300);
+                }
                 break;
               case "checkout_link":
                 attachCheckoutLink({
@@ -874,6 +1012,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                 break;
               case "done":
                 setConversationId(event.conversation_id);
+                currentConversationId = event.conversation_id;
                 setWorkflowStage(event.workflow_stage);
                 // Capture the backend's sticky language if surfaced.
                 // Stays unchanged otherwise so a later turn that the
@@ -989,6 +1128,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       attachCheckoutLink,
       attachCancellation,
       attachOnboarding,
+      resumeExtras,
     ],
   );
 
@@ -1134,6 +1274,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     send,
     stop,
     reset,
+    resumeExtras,
     language,
     workflowStage,
   };
