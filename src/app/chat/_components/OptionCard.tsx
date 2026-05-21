@@ -62,18 +62,42 @@ function formatTime(iso: string): string {
   return match ? match[1]! : iso;
 }
 
-function SliceLine({ slice }: { slice: FlightSlice }) {
+function formatDate(iso: string, language: SupportedLanguage): string {
+  // Same regex-extraction approach as `formatTime` — avoid `new Date(...)`
+  // so we don't shift across the user's local timezone. Renders the
+  // localised short form: FR "21 mai", EN "May 21".
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return iso;
+  const day = parseInt(match[3]!, 10);
+  const monthIndex = parseInt(match[2]!, 10) - 1;
+  const monthNames = strings(language).optionCard.monthNamesShort;
+  const month = monthNames[monthIndex] ?? match[2]!;
+  return language === "fr" ? `${day} ${month}` : `${month} ${day}`;
+}
+
+function SliceLine({
+  slice,
+  language,
+}: {
+  slice: FlightSlice;
+  language: SupportedLanguage;
+}) {
   return (
-    <div className="text-sm text-gray-700">
-      <span className="font-mono text-xs text-gray-500">
-        {slice.origin_iata}
-      </span>{" "}
-      {formatTime(slice.departure_datetime)}{" "}
-      <span aria-hidden="true">→</span>{" "}
-      <span className="font-mono text-xs text-gray-500">
-        {slice.destination_iata}
-      </span>{" "}
-      {formatTime(slice.arrival_datetime)}
+    <div>
+      <div className="text-xs text-gray-500">
+        {formatDate(slice.departure_datetime, language)}
+      </div>
+      <div className="text-sm text-gray-700">
+        <span className="font-mono text-xs text-gray-500">
+          {slice.origin_iata}
+        </span>{" "}
+        {formatTime(slice.departure_datetime)}{" "}
+        <span aria-hidden="true">→</span>{" "}
+        <span className="font-mono text-xs text-gray-500">
+          {slice.destination_iata}
+        </span>{" "}
+        {formatTime(slice.arrival_datetime)}
+      </div>
     </div>
   );
 }
@@ -100,9 +124,11 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
               {offer.airline_iata}
             </span>
           </div>
-          <div className="mt-1 space-y-0.5">
-            <SliceLine slice={offer.outbound} />
-            {offer.return_leg && <SliceLine slice={offer.return_leg} />}
+          <div className="mt-1 space-y-1">
+            <SliceLine slice={offer.outbound} language={language} />
+            {offer.return_leg && (
+              <SliceLine slice={offer.return_leg} language={language} />
+            )}
           </div>
         </div>
         <div className="text-lg font-semibold tabular-nums text-gray-900">

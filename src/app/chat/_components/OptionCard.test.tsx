@@ -116,4 +116,40 @@ describe("OptionCard", () => {
       screen.getByText(/approbation manager requise/),
     ).toBeInTheDocument();
   });
+
+  it("renders the date in EN format ('Jun 1') above the slice line", () => {
+    // User feedback 2026-05-21: live Duffel offers carry a real
+    // departure date, the card should surface it so the user can spot
+    // a wrong-day pick before clicking through. EN locale formats day
+    // after month.
+    render(<OptionCard offer={baseOffer} language="en" />);
+    expect(screen.getByText(/Jun 1/)).toBeInTheDocument();
+  });
+
+  it("renders the date in FR format ('1 juin') above the slice line", () => {
+    render(<OptionCard offer={baseOffer} language="fr" />);
+    expect(screen.getByText(/1 juin/)).toBeInTheDocument();
+  });
+
+  it("renders per-slice dates for round-trip when outbound/return differ", () => {
+    // Round-trip with outbound Jun 1, return Jun 8 — both dates must
+    // surface so the user can verify the return-leg booking.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          return_leg: {
+            origin_iata: "JFK",
+            destination_iata: "CDG",
+            departure_datetime: "2026-06-08T18:30:00",
+            arrival_datetime: "2026-06-09T08:45:00",
+            duration_iso: "PT8H15M",
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByText(/Jun 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Jun 8/)).toBeInTheDocument();
+  });
 });

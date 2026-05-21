@@ -292,3 +292,84 @@ describe("ChatWindow — CancellationCard renders text bubble alongside card", (
     expect(container.querySelector(".bg-gray-100")).toBeNull();
   });
 });
+
+describe("ChatWindow — booking message renders text bubble + card together", () => {
+  it("keeps the warm 'Bouclé !' text visible alongside the BookingConfirmationCard", () => {
+    // Regression for the "type then delete" flicker observed
+    // 2026-05-21 with live Duffel: checkout_node streams a warm
+    // seed-pool phrase ("Bouclé ! Marseille → Toulouse ref STUB...")
+    // which arrives BEFORE event:booking. attachBooking augments the
+    // last assistant message in-place; pre-fix the renderer returned
+    // the card and discarded m.content, masking the bot's spoken
+    // confirmation. Now both must render.
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "option 1" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "Bouclé ! Marseille → Toulouse ref STUB0000ABC.",
+        booking: {
+          trip_id: "trip-1",
+          booking_reference: "STUB0000ABC",
+          passenger_name: "Test Customer",
+          amount_cents: 45000,
+          currency: "USD",
+          legs: [
+            {
+              origin_iata: "MRS",
+              destination_iata: "TLS",
+              departure_iso: "2026-06-01T08:00:00",
+              arrival_iso: "2026-06-01T10:15:00",
+              airline_name: "Duffel Airways",
+            },
+          ],
+          total_duration_minutes: 135,
+        },
+      },
+    ];
+    _renderWindow({ messages, isStreaming: false });
+
+    expect(screen.getByTestId("booking-confirmation-card")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Bouclé ! Marseille → Toulouse ref STUB0000ABC\./),
+    ).toBeInTheDocument();
+  });
+
+  it("skips the empty bubble when the booking message has no content", () => {
+    // Defensive — the booking event can arrive without a preceding
+    // assistant text (attachBooking's fallback branch pushes a fresh
+    // message with content=""). The card must render; no empty
+    // rectangle should appear above it.
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "option 1" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "",
+        booking: {
+          trip_id: "trip-1",
+          booking_reference: "STUB0000ABC",
+          passenger_name: "Test Customer",
+          amount_cents: 45000,
+          currency: "USD",
+          legs: [
+            {
+              origin_iata: "MRS",
+              destination_iata: "TLS",
+              departure_iso: "2026-06-01T08:00:00",
+              arrival_iso: "2026-06-01T10:15:00",
+              airline_name: "Duffel Airways",
+            },
+          ],
+          total_duration_minutes: 135,
+        },
+      },
+    ];
+    const { container } = _renderWindow({ messages, isStreaming: false });
+
+    expect(screen.getByTestId("booking-confirmation-card")).toBeInTheDocument();
+    // No stray assistant bubble — same detection pattern as the
+    // cancellation test above.
+    expect(container.querySelector(".bg-gray-100")).toBeNull();
+  });
+});

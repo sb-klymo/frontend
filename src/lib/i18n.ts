@@ -55,6 +55,12 @@ type Strings = {
     badgeManagerApproval: string;
     badgeFinanceApproval: string;
     badgeBlocked: string;
+    // Twelve short month names used for the per-slice date line, e.g.
+    // FR: "21 mai", EN: "May 21". Order: January (index 0) … December (11).
+    monthNamesShort: readonly [
+      string, string, string, string, string, string,
+      string, string, string, string, string, string,
+    ];
   };
   bookingCard: {
     title: string;
@@ -144,6 +150,10 @@ const EN: Strings = {
     badgeManagerApproval: "⚠ requires manager approval",
     badgeFinanceApproval: "⚠ requires finance approval",
     badgeBlocked: "✗ blocked",
+    monthNamesShort: [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ],
   },
   bookingCard: {
     title: "Booking confirmed",
@@ -239,6 +249,10 @@ const FR: Strings = {
     badgeManagerApproval: "⚠ approbation manager requise",
     badgeFinanceApproval: "⚠ approbation finance requise",
     badgeBlocked: "✗ bloqué",
+    monthNamesShort: [
+      "janv.", "févr.", "mars", "avr.", "mai", "juin",
+      "juil.", "août", "sept.", "oct.", "nov.", "déc.",
+    ],
   },
   bookingCard: {
     title: "Réservation confirmée",

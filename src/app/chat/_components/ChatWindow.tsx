@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 
 import type { ChatMessage } from "@/hooks/useChatStream";
 import { strings, type SupportedLanguage } from "@/lib/i18n";
@@ -137,12 +137,33 @@ export function ChatWindow({
               // MUST win the render priority over `checkoutLink` —
               // otherwise the booked card with PNR + flight legs +
               // PDF download never appears.
+              //
+              // Render the text bubble AND the card when both are
+              // present. The booking event arrives as an augmentation
+              // of the previous assistant message (the warm
+              // checkout_node "Bouclé !" close phrased via
+              // `phrase()`), and that text was being silently
+              // discarded by the renderer pre-2026-05-21 — see user
+              // feedback "the text appears briefly then is replaced
+              // by the card". The defensive branch in `attachBooking`
+              // pushes a fresh message with `content=""` when no
+              // preceding assistant text exists, so guard the Bubble
+              // on a non-empty `m.content` to avoid an empty grey
+              // rectangle in that case.
               return (
-                <BookingConfirmationCard
-                  key={m.id}
-                  booking={m.booking}
-                  language={language}
-                />
+                <Fragment key={m.id}>
+                  {m.content && (
+                    <Bubble
+                      role="assistant"
+                      content={m.content}
+                      streaming={false}
+                    />
+                  )}
+                  <BookingConfirmationCard
+                    booking={m.booking}
+                    language={language}
+                  />
+                </Fragment>
               );
             }
             if (m.checkoutLink) {
