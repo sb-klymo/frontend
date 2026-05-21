@@ -78,6 +78,44 @@ export type CancellationDetails = {
 };
 
 /**
+ * Approval status for an approval request row. Mirrors the
+ * `approval_requests.status` enum on the backend.
+ */
+export type ApprovalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "expired"
+  | "canceled";
+
+/**
+ * Approval request details surfaced via `event: approval_required` (Phase
+ * 6). Backend emits one when the policy engine flags a selected offer as
+ * requiring manager/finance approval. The frontend renders an
+ * `ApprovalPendingCard` that morphs in-place via Realtime when the manager
+ * decides (approved/rejected/expired/canceled).
+ *
+ * The `decided_by_first_name` field is optional because it is only
+ * populated on terminal approved/rejected states; pending rows carry
+ * `null`.
+ */
+export type ApprovalRequestDetails = {
+  id: string;
+  total: number;
+  currency: string;
+  /** ISO 8601 expiry timestamp — drives the countdown on the card. */
+  expires_at: string;
+  approver_emails: string[];
+  policy_reason: string | null;
+  status: ApprovalStatus;
+  decision_reason?: string | null;
+  decided_at?: string | null;
+  /** First name of the manager who made the decision. Used for the
+   * "Approved by {name}" / "Rejected by {name}" line on the morphed card. */
+  decided_by_first_name?: string | null;
+};
+
+/**
  * Onboarding redirect surfaced via `event: onboarding_redirect` (PR-4
  * phase-4). Backend emits one when this turn lands
  * `workflow_stage='onboarding_payment_redirect'` — the third stage of
@@ -190,6 +228,19 @@ export type ChatMessage = {
    * only fires before any trip has been planned.
    */
   onboarding?: OnboardingDetails;
+  /**
+   * Approval request payload attached via the `event: approval_required`
+   * SSE frame (Phase 6). When present, the renderer shows an
+   * `ApprovalPendingCard` that subscribes to Supabase Realtime and morphs
+   * in-place when the manager decides. Takes precedence over `booking` and
+   * `checkoutLink` in the ChatWindow renderer — an offer awaiting approval
+   * must never display as a payable or confirmed booking.
+   *
+   * NOTE: the SSE consumer for this field is wired in Task 14.
+   * This field is present on the type now so Task 14 can populate it
+   * without a type-layer PR.
+   */
+  approvalRequest?: ApprovalRequestDetails;
   /**
    * Backend-assigned bubble identity from the SSE `event: message`
    * payload (`message_id`). For token-streaming chunks from a single

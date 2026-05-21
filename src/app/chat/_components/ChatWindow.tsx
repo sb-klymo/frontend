@@ -6,6 +6,7 @@ import type { ChatMessage } from "@/hooks/useChatStream";
 import { strings, type SupportedLanguage } from "@/lib/i18n";
 import { useChatStore } from "@/stores/chatStore";
 
+import { ApprovalPendingCard } from "./ApprovalPendingCard";
 import { BookingConfirmationCard } from "./BookingConfirmationCard";
 import { CancellationCard } from "./CancellationCard";
 import { CheckoutPaymentCard } from "./CheckoutPaymentCard";
@@ -125,6 +126,35 @@ export function ChatWindow({
                   onboarding={m.onboarding}
                   language={language}
                 />
+              );
+            }
+            if (m.approvalRequest) {
+              // Phase 6 — offer flagged as requiring manager/finance
+              // approval. The card subscribes to Supabase Realtime and
+              // morphs in-place when the manager decides (approved /
+              // rejected / expired / canceled). Placed BEFORE `booking`
+              // and `checkoutLink`: an offer awaiting approval must
+              // never be rendered as a payable or confirmed booking.
+              //
+              // Render pattern mirrors the `m.booking` Fragment: text
+              // bubble first (the bot's "I've sent this to your manager"
+              // phrase), then the structured card below. Guard the bubble
+              // on non-empty content so no empty grey rectangle appears
+              // when the message was pushed without assistant text.
+              return (
+                <Fragment key={m.id}>
+                  {m.content && (
+                    <Bubble
+                      role="assistant"
+                      content={m.content}
+                      streaming={false}
+                    />
+                  )}
+                  <ApprovalPendingCard
+                    approval={m.approvalRequest}
+                    language={language}
+                  />
+                </Fragment>
               );
             }
             if (m.booking) {

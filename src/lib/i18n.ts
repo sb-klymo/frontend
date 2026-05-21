@@ -133,6 +133,33 @@ type Strings = {
     closeTabHint: string;
     fallbackLinkLabel: string;
   };
+  approvalCard: {
+    /** Status pill copy — pending */
+    pendingStatus: string;
+    /** Countdown prefix, e.g. "Expires in" */
+    expiresInLabel: string;
+    expiresInLessThanMinute: string;
+    /** Approver list label */
+    approversLabel: string;
+    /** Policy reason label */
+    policyReasonLabel: string;
+    /** Amount label */
+    amountLabel: string;
+    /** Cancel button */
+    cancelButtonLabel: string;
+    cancellingLabel: string;
+    /** Approved state */
+    approvedTitle: string;
+    approvedBy: (name: string) => string;
+    /** Rejected state */
+    rejectedTitle: string;
+    rejectedReason: (reason: string) => string;
+    /** Expired state */
+    expiredTitle: string;
+    expiredHint: string;
+    /** Canceled/withdrawn state */
+    canceledTitle: string;
+  };
 };
 
 const EN: Strings = {
@@ -225,6 +252,23 @@ const EN: Strings = {
       "Your payment method is ready. We've notified your chat — your conversation continues there.",
     closeTabHint: "You can close this tab.",
     fallbackLinkLabel: "Open the chat in this tab",
+  },
+  approvalCard: {
+    pendingStatus: "Awaiting approval",
+    expiresInLabel: "Expires in",
+    expiresInLessThanMinute: "less than a minute",
+    approversLabel: "Approvers",
+    policyReasonLabel: "Policy reason",
+    amountLabel: "Amount",
+    cancelButtonLabel: "Cancel this request",
+    cancellingLabel: "Cancelling…",
+    approvedTitle: "Approved",
+    approvedBy: (name: string) => `Approved by ${name}. Continuing your booking…`,
+    rejectedTitle: "Rejected",
+    rejectedReason: (reason: string) => `Rejected. Reason: ${reason}`,
+    expiredTitle: "Request expired",
+    expiredHint: "This request expired. Want to try a different option?",
+    canceledTitle: "Request withdrawn.",
   },
   typingIndicator: {
     thinking: "Thinking…",
@@ -324,6 +368,23 @@ const FR: Strings = {
       "Votre moyen de paiement est prêt. Nous avons prévenu votre chat — votre conversation continue là-bas.",
     closeTabHint: "Vous pouvez fermer cet onglet.",
     fallbackLinkLabel: "Ouvrir le chat dans cet onglet",
+  },
+  approvalCard: {
+    pendingStatus: "En attente de l'approbation",
+    expiresInLabel: "Expire dans",
+    expiresInLessThanMinute: "moins d'une minute",
+    approversLabel: "Approbateurs",
+    policyReasonLabel: "Motif politique",
+    amountLabel: "Montant",
+    cancelButtonLabel: "Annuler cette demande",
+    cancellingLabel: "Annulation…",
+    approvedTitle: "Approuvé",
+    approvedBy: (name: string) => `Approuvé par ${name}. Votre réservation continue…`,
+    rejectedTitle: "Refusé",
+    rejectedReason: (reason: string) => `Refusé. Motif : ${reason}`,
+    expiredTitle: "Demande expirée",
+    expiredHint: "Cette demande a expiré. Voulez-vous essayer une autre option ?",
+    canceledTitle: "Demande retirée.",
   },
   typingIndicator: {
     thinking: "Réflexion en cours…",
