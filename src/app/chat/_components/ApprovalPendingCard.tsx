@@ -83,7 +83,6 @@ export function ApprovalPendingCard({
     return (
       <RejectedBanner
         row={row}
-        language={language}
         t={t}
       />
     );
@@ -133,7 +132,11 @@ export function ApprovalPendingCard({
         {/* Countdown */}
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 text-gray-500">{t.expiresInLabel}</dt>
-          <dd className="font-medium text-amber-700" data-testid="approval-countdown">
+          <dd
+            className="font-medium text-amber-700"
+            data-testid="approval-countdown"
+            aria-hidden="true"
+          >
             <Countdown expiresAt={row.expires_at} t={t} />
           </dd>
         </div>
@@ -209,6 +212,8 @@ function ApprovedBanner({
     <div
       className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm"
       data-testid="approval-approved-card"
+      role="status"
+      aria-live="polite"
     >
       <div className="flex items-center gap-2">
         <span aria-hidden="true">✅</span>
@@ -231,13 +236,14 @@ function RejectedBanner({
   t,
 }: {
   row: ApprovalRequestDetails;
-  language: SupportedLanguage;
   t: ApprovalCardStrings;
 }) {
   return (
     <div
       className="rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm"
       data-testid="approval-rejected-card"
+      role="status"
+      aria-live="polite"
     >
       <div className="flex items-center gap-2">
         <span aria-hidden="true">❌</span>
@@ -257,6 +263,8 @@ function ExpiredBanner({ t }: { t: ApprovalCardStrings }) {
     <div
       className="rounded-lg border border-gray-200 bg-gray-50 p-4 shadow-sm"
       data-testid="approval-expired-card"
+      role="status"
+      aria-live="polite"
     >
       <div className="flex items-center gap-2">
         <span aria-hidden="true">⌛</span>
@@ -274,9 +282,15 @@ function CanceledBanner({ t }: { t: ApprovalCardStrings }) {
     <div
       className="rounded-lg border border-gray-200 bg-gray-50 p-4 shadow-sm"
       data-testid="approval-canceled-card"
+      role="status"
+      aria-live="polite"
     >
+      <div className="flex items-center gap-2">
+        <span aria-hidden="true">🚫</span>
+        <h3 className="text-sm font-semibold text-gray-600">{t.canceledHeading}</h3>
+      </div>
       <p
-        className="text-xs text-gray-500 line-through"
+        className="mt-2 text-xs text-gray-500 line-through"
         data-testid="approval-canceled-message"
       >
         {t.canceledTitle}
@@ -299,20 +313,22 @@ function Countdown({
   const [remaining, setRemaining] = useState(() => getRemainingSeconds(expiresAt));
 
   useEffect(() => {
-    if (remaining <= 0) return;
     const id = setInterval(() => {
-      setRemaining(getRemainingSeconds(expiresAt));
+      const next = getRemainingSeconds(expiresAt);
+      setRemaining(next);
+      if (next <= 0) clearInterval(id);
     }, 1000);
     return () => clearInterval(id);
-  }, [expiresAt, remaining]);
+  }, [expiresAt]);
 
   if (remaining <= 0) return <span>{t.expiresInLessThanMinute}</span>;
   return <span>{formatCountdown(remaining)}</span>;
 }
 
 function getRemainingSeconds(expiresAt: string): number {
-  const expiry = new Date(expiresAt).getTime();
-  return Math.max(0, Math.floor((expiry - Date.now()) / 1000));
+  const ms = new Date(expiresAt).getTime();
+  if (Number.isNaN(ms)) return 0;
+  return Math.max(0, Math.floor((ms - Date.now()) / 1000));
 }
 
 function formatCountdown(seconds: number): string {

@@ -77,6 +77,7 @@ function _approval(overrides: Partial<ApprovalRequestDetails> = {}): ApprovalReq
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   lastPostgresChangesHandler = null;
   mockOn.mockImplementation(
     (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
@@ -95,6 +96,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -171,6 +173,45 @@ describe("ApprovalPendingCard", () => {
     const decidedRow = onDecided.mock.calls[0]?.[0] as ApprovalRequestDetails | undefined;
     expect(decidedRow?.status).toBe("approved");
     expect(decidedRow?.decided_by_first_name).toBe("Alice");
+  });
+
+  it("onDecided callback receives the merged row (including intermediate UPDATE fields), not the stale initialRow", async () => {
+    const onDecided = vi.fn();
+    render(
+      <ApprovalPendingCard
+        approval={_approval()}
+        language="en"
+        onDecided={onDecided}
+      />,
+    );
+
+    await waitFor(() => expect(lastPostgresChangesHandler).not.toBeNull());
+
+    // Intermediate (non-terminal) UPDATE: policy_reason changes mid-flight.
+    await act(async () => {
+      lastPostgresChangesHandler!({
+        new: { policy_reason: "Updated policy reason" },
+      });
+    });
+
+    // Terminal UPDATE arrives next: approved.
+    await act(async () => {
+      lastPostgresChangesHandler!({
+        new: {
+          status: "approved",
+          decided_by_first_name: "Dana",
+          decided_at: new Date().toISOString(),
+        },
+      });
+    });
+
+    expect(onDecided).toHaveBeenCalledOnce();
+    const decidedRow = onDecided.mock.calls[0]?.[0] as ApprovalRequestDetails | undefined;
+    // Must carry both the terminal fields AND the intermediate field —
+    // not the stale initialRow value ("Exceeds €400 limit").
+    expect(decidedRow?.status).toBe("approved");
+    expect(decidedRow?.decided_by_first_name).toBe("Dana");
+    expect(decidedRow?.policy_reason).toBe("Updated policy reason");
   });
 
   it("morphs to 'rejected' state and surfaces decision_reason", async () => {

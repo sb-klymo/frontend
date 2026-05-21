@@ -158,6 +158,7 @@ type Strings = {
     expiredTitle: string;
     expiredHint: string;
     /** Canceled/withdrawn state */
+    canceledHeading: string;
     canceledTitle: string;
   };
 };
@@ -268,6 +269,7 @@ const EN: Strings = {
     rejectedReason: (reason: string) => `Rejected. Reason: ${reason}`,
     expiredTitle: "Request expired",
     expiredHint: "This request expired. Want to try a different option?",
+    canceledHeading: "Canceled",
     canceledTitle: "Request withdrawn.",
   },
   typingIndicator: {
@@ -384,6 +386,7 @@ const FR: Strings = {
     rejectedReason: (reason: string) => `Refusé. Motif : ${reason}`,
     expiredTitle: "Demande expirée",
     expiredHint: "Cette demande a expiré. Voulez-vous essayer une autre option ?",
+    canceledHeading: "Annulée",
     canceledTitle: "Demande retirée.",
   },
   typingIndicator: {

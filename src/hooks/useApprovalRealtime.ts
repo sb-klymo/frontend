@@ -49,6 +49,11 @@ export function useApprovalRealtime(
     row: initialRow,
   });
 
+  // Tracks the latest fully-merged row so `onDecided` always receives an
+  // up-to-date snapshot — not the stale `initialRow` — even when an
+  // intermediate non-terminal UPDATE arrived before the terminal one.
+  const latestRowRef = useRef<ApprovalRequestDetails>(initialRow);
+
   // Keep a stable ref to the onDecided callback so the effect closure
   // doesn't go stale when the parent re-renders.
   const onDecidedRef = useRef(options?.onDecided);
@@ -98,26 +103,28 @@ export function useApprovalRealtime(
           },
           (payload: { new: Record<string, unknown> }) => {
             const next = payload.new as Partial<ApprovalRequestDetails>;
+            // Merge eagerly against the ref (which always holds the latest
+            // accumulated row) so we have the merged result synchronously —
+            // before React batches the setResult call. This means
+            // latestRowRef.current is up-to-date by the time we call
+            // onDecided, even if the setResult updater runs later.
+            const mergedRow: ApprovalRequestDetails = {
+              ...latestRowRef.current,
+              ...(next as Partial<ApprovalRequestDetails>),
+            };
+            latestRowRef.current = mergedRow;
+
             setResult((prev) => {
               if (prev.status !== "ready") return prev;
-              const updated: ApprovalRequestDetails = {
-                ...prev.row,
-                ...(next as Partial<ApprovalRequestDetails>),
-              };
-              return { status: "ready", row: updated };
+              return { status: "ready", row: mergedRow };
             });
 
             const newStatus = next.status as ApprovalStatus | undefined;
             if (newStatus && TERMINAL_STATUSES.includes(newStatus)) {
-              // Fire onDecided with the merged row. We read the current
-              // state via a functional updater pattern above, but here we
-              // construct the merged row directly from the payload for
-              // simplicity (avoids an extra state read).
-              const decidedRow: ApprovalRequestDetails = {
-                ...initialRow,
-                ...(next as Partial<ApprovalRequestDetails>),
-              };
-              onDecidedRef.current?.(decidedRow);
+              // latestRowRef.current was updated synchronously above —
+              // it reflects all intermediate UPDATEs that arrived before
+              // this terminal one.
+              onDecidedRef.current?.(latestRowRef.current);
             }
           },
         )
@@ -145,7 +152,7 @@ export function useApprovalRealtime(
       // websocket close runs async on the supabase-js side.
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [initialRow.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialRow.id]);
 
   return result;
 }
