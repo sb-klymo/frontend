@@ -85,6 +85,18 @@ export function ChatRoot({ isTeam = false }: { isTeam?: boolean }) {
         send={stream.send}
         stop={stream.stop}
         reset={stream.reset}
+        onApprovalDecided={
+          // Realtime delivered a terminal approval status to a watching
+          // tab. Trigger the resume so `_reentry_approved` /
+          // `_reentry_rejected` emit their AIMessage via SSE and the
+          // user sees the post-decision bubble below the morphed card.
+          // No-op if conversationId is unset (mid-mount / pre-conversation).
+          conversationId
+            ? () => {
+                void stream.resumeApproval(conversationId);
+              }
+            : undefined
+        }
       />
     </div>
   );

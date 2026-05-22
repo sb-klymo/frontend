@@ -1541,6 +1541,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     reset,
     resumeExtras,
     checkPendingApprovals,
+    resumeApproval,
     language,
     workflowStage,
   };
