@@ -116,16 +116,35 @@ export function ChatWindow({
               // PR-4 phase-4 — first-time signup CTA. Onboarding only
               // fires before any trip exists, so this branch is
               // mutually exclusive with booking/checkoutLink in
-              // practice. Renders BEFORE the text-bubble check so the
-              // backend's rephrased "add a payment method here…" text
-              // is REPLACED by the card (the URL in the text would be
-              // a redundant duplicate of the CTA button).
+              // practice.
+              //
+              // Phase 7 (2026-05-22) — render text bubble AND card
+              // together (Fragment pattern, same as booking/approval
+              // cards). Previously the card replaced the text bubble,
+              // which worked when the only text was a redundant "add
+              // a payment method here…" prompt. But the threshold
+              // stage now emits meaningful confirmation text
+              // ("Compris, je vous demande votre accord à partir de
+              // 200 €") in the same SSE turn that the
+              // `onboarding_redirect` event attaches the card payload
+              // to — without this Fragment, that confirmation was
+              // invisible. Guard the bubble on non-empty content so
+              // legacy turns with no preceding text (the redirect
+              // re-emit path) don't render an empty grey rectangle.
               return (
-                <OnboardingCard
-                  key={m.id}
-                  onboarding={m.onboarding}
-                  language={language}
-                />
+                <Fragment key={m.id}>
+                  {m.content && (
+                    <Bubble
+                      role="assistant"
+                      content={m.content}
+                      streaming={false}
+                    />
+                  )}
+                  <OnboardingCard
+                    onboarding={m.onboarding}
+                    language={language}
+                  />
+                </Fragment>
               );
             }
             if (m.approvalRequest) {
