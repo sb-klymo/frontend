@@ -22,9 +22,9 @@ export function parseISODuration(iso: string): number {
   let hours = 0;
   let minutes = 0;
   const hMatch = body.match(/(\d+)H/);
-  if (hMatch) hours = parseInt(hMatch[1], 10);
+  if (hMatch && hMatch[1] !== undefined) hours = parseInt(hMatch[1], 10);
   const mMatch = body.match(/(\d+)M/);
-  if (mMatch) minutes = parseInt(mMatch[1], 10);
+  if (mMatch && mMatch[1] !== undefined) minutes = parseInt(mMatch[1], 10);
   return hours * 60 + minutes;
 }
 

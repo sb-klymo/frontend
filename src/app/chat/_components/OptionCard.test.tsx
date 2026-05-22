@@ -20,6 +20,11 @@ const baseOffer: DisplayedOffer = {
     departure_datetime: "2026-06-01T08:00:00",
     arrival_datetime: "2026-06-01T10:15:00",
     duration_iso: "PT2H15M",
+    // Phase 10 — direct flight default fixture (no stops).
+    segments: [],
+    stops_count: 0,
+    intermediate_airports: [],
+    layover_durations_iso: [],
   },
   return_leg: null,
   policy_status: "auto_approved",
@@ -85,6 +90,10 @@ describe("OptionCard", () => {
             departure_datetime: "2026-06-08T14:30:00",
             arrival_datetime: "2026-06-08T16:45:00",
             duration_iso: "PT2H15M",
+            segments: [],
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
           },
         }}
       />,
@@ -144,6 +153,10 @@ describe("OptionCard", () => {
             departure_datetime: "2026-06-08T18:30:00",
             arrival_datetime: "2026-06-09T08:45:00",
             duration_iso: "PT8H15M",
+            segments: [],
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
           },
         }}
         language="en"

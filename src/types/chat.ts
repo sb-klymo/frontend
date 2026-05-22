@@ -12,12 +12,27 @@
  *   backend/src/policy/types.py → PolicyResult (here named PolicyStatus)
  */
 
+export type FlightSegment = {
+  origin_iata: string;
+  destination_iata: string;
+  departing_at: string; // ISO-8601 UTC string
+  arriving_at: string;
+  duration_iso: string;
+  marketing_carrier_iata: string;
+  operating_carrier_iata: string | null;
+};
+
 export type FlightSlice = {
   origin_iata: string;
   destination_iata: string;
   departure_datetime: string; // ISO-8601 UTC string
   arrival_datetime: string;
   duration_iso: string; // e.g. "PT2H15M"
+  // Phase 10 — per-segment data + derived stops/layover info.
+  segments: FlightSegment[];
+  stops_count: number;
+  intermediate_airports: string[];
+  layover_durations_iso: string[];
 };
 
 export type PolicyStatus =
