@@ -204,7 +204,6 @@ describe("POST /api/payment/setup-intent BFF route", () => {
 
     const [, callOptions] = vi.mocked(global.fetch).mock.calls[0] ?? [];
     expect(callOptions).toBeDefined();
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const callBody = JSON.parse((callOptions as RequestInit).body as string);
     expect(callBody.target).toBe("user");
     // Employees must NOT have org_id set in target=user mode.
