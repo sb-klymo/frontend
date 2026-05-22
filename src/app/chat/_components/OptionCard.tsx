@@ -5,7 +5,9 @@
  * even though it's only used inside ChatWindow (client component) today.
  */
 
+import { formatDuration } from "@/lib/duration";
 import { strings, type SupportedLanguage } from "@/lib/i18n";
+import { classifyLayover, layoverClassName } from "@/lib/layover";
 import type { DisplayedOffer, FlightSlice, PolicyStatus } from "@/types/chat";
 
 const STATUS_PILL_CLASS: Record<PolicyStatus, string> = {
@@ -75,16 +77,110 @@ function formatDate(iso: string, language: SupportedLanguage): string {
   return language === "fr" ? `${day} ${month}` : `${month} ${day}`;
 }
 
+/**
+ * Compute the "+N" day-difference suffix when arrival date differs from
+ * departure. Returns "" for same-day, " +1" / " +2" / etc otherwise.
+ *
+ * Uses UTC components so the displayed suffix matches what the user reads
+ * on the row (departure/arrival times are rendered from the ISO string
+ * substring — see `formatTime`).
+ */
+function dayDiffSuffix(departure: string, arrival: string): string {
+  const dep = new Date(departure);
+  const arr = new Date(arrival);
+  if (isNaN(dep.getTime()) || isNaN(arr.getTime())) return "";
+  const dayMs = 24 * 60 * 60 * 1000;
+  const depUTC = Date.UTC(
+    dep.getUTCFullYear(),
+    dep.getUTCMonth(),
+    dep.getUTCDate(),
+  );
+  const arrUTC = Date.UTC(
+    arr.getUTCFullYear(),
+    arr.getUTCMonth(),
+    arr.getUTCDate(),
+  );
+  if (depUTC === arrUTC) return "";
+  const days = Math.round((arrUTC - depUTC) / dayMs);
+  return days > 0 ? ` +${days}` : "";
+}
+
+type SliceInfoRowProps = {
+  slice: FlightSlice;
+  language: SupportedLanguage;
+};
+
+/**
+ * Renders the Phase 10 duration + stops + layover row beneath the time row:
+ *   "8h 21min · Direct"                    (green Direct, no stops)
+ *   "11h 15min · 1 stop · 2h 15min in MAD" (gray, normal layover)
+ *   "11h 30min · 1 stop · 45min in AMS ⚠"  (orange, tight layover)
+ *   "19h 40min · 2 stops · IST, FRA"       (2+ stops, no per-gap detail)
+ */
+function SliceInfoRow({ slice, language }: SliceInfoRowProps) {
+  const t = strings(language).optionCard;
+  const durationText = formatDuration(slice.duration_iso, language);
+  const isDirect = slice.stops_count === 0;
+  const stopsText = isDirect ? t.directLabel : t.stopsLabel(slice.stops_count);
+
+  let layoverNode: React.ReactNode = null;
+  if (slice.stops_count === 1 && slice.layover_durations_iso.length === 1) {
+    const layoverIso = slice.layover_durations_iso[0];
+    if (layoverIso) {
+      const layoverMins = formatDuration(layoverIso, language);
+      const level = classifyLayover(layoverIso);
+      const cls = layoverClassName(level);
+      const warning = level !== "normal" ? " ⚠" : "";
+      const airport = slice.intermediate_airports[0] ?? "";
+      // Skip the layover span entirely when the airport IATA is missing —
+      // avoids " · 2h 15min in  ⚠" (double space + dangling preposition).
+      if (airport) {
+        layoverNode = (
+          <span className={cls} data-testid="layover-detail">
+            {`${t.layoverIn(layoverMins, airport)}${warning}`}
+          </span>
+        );
+      }
+    }
+  } else if (slice.stops_count >= 2) {
+    const shown = slice.intermediate_airports.slice(0, 2).join(", ");
+    const ellipsis =
+      slice.intermediate_airports.length > 2 ? "…" : "";
+    layoverNode = (
+      <span className="text-gray-500">
+        {` · ${shown}${ellipsis}`}
+      </span>
+    );
+  }
+
+  return (
+    <div
+      className="mt-1 text-xs text-gray-600"
+      data-testid="slice-info-row"
+    >
+      {durationText && <span>{durationText}</span>}
+      {durationText && <span> · </span>}
+      <span className={isDirect ? "text-green-600" : "text-gray-500"}>
+        {stopsText}
+      </span>
+      {layoverNode}
+    </div>
+  );
+}
+
 function SliceLine({
   slice,
   language,
+  label,
 }: {
   slice: FlightSlice;
   language: SupportedLanguage;
+  label?: string;
 }) {
   return (
     <div>
       <div className="text-xs text-gray-500">
+        {label ? `${label} · ` : ""}
         {formatDate(slice.departure_datetime, language)}
       </div>
       <div className="text-sm text-gray-700">
@@ -97,7 +193,9 @@ function SliceLine({
           {slice.destination_iata}
         </span>{" "}
         {formatTime(slice.arrival_datetime)}
+        {dayDiffSuffix(slice.departure_datetime, slice.arrival_datetime)}
       </div>
+      <SliceInfoRow slice={slice} language={language} />
     </div>
   );
 }
@@ -125,9 +223,17 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
             </span>
           </div>
           <div className="mt-1 space-y-1">
-            <SliceLine slice={offer.outbound} language={language} />
+            <SliceLine
+              slice={offer.outbound}
+              language={language}
+              label={offer.return_leg ? t.legLabelOutbound : undefined}
+            />
             {offer.return_leg && (
-              <SliceLine slice={offer.return_leg} language={language} />
+              <SliceLine
+                slice={offer.return_leg}
+                language={language}
+                label={t.legLabelReturn}
+              />
             )}
           </div>
         </div>

@@ -20,6 +20,11 @@ const baseOffer: DisplayedOffer = {
     departure_datetime: "2026-06-01T08:00:00",
     arrival_datetime: "2026-06-01T10:15:00",
     duration_iso: "PT2H15M",
+    // Phase 10 — direct flight default fixture (no stops).
+    segments: [],
+    stops_count: 0,
+    intermediate_airports: [],
+    layover_durations_iso: [],
   },
   return_leg: null,
   policy_status: "auto_approved",
@@ -85,6 +90,10 @@ describe("OptionCard", () => {
             departure_datetime: "2026-06-08T14:30:00",
             arrival_datetime: "2026-06-08T16:45:00",
             duration_iso: "PT2H15M",
+            segments: [],
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
           },
         }}
       />,
@@ -144,6 +153,10 @@ describe("OptionCard", () => {
             departure_datetime: "2026-06-08T18:30:00",
             arrival_datetime: "2026-06-09T08:45:00",
             duration_iso: "PT8H15M",
+            segments: [],
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
           },
         }}
         language="en"
@@ -151,5 +164,223 @@ describe("OptionCard", () => {
     );
     expect(screen.getByText(/Jun 1/)).toBeInTheDocument();
     expect(screen.getByText(/Jun 8/)).toBeInTheDocument();
+  });
+});
+
+describe("OptionCard — Phase 10 duration + stops + layover", () => {
+  it("renders 'Direct' in green for stops_count=0", () => {
+    // Direct flight (8h 21min, no stops). Expect: "Direct" rendered in a
+    // green Tailwind class so the user can spot zero-stop offers instantly.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT8H21M",
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
+          },
+        }}
+        language="en"
+      />,
+    );
+    const directNode = screen.getByText("Direct");
+    expect(directNode).toBeInTheDocument();
+    expect(directNode.className).toMatch(/text-green-/);
+  });
+
+  it("renders '1 stop · 2h 15min in MAD' for normal layover", () => {
+    // 1 stop, 2h 15min layover in MAD — within normal range, gray text.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT11H15M",
+            stops_count: 1,
+            intermediate_airports: ["MAD"],
+            layover_durations_iso: ["PT2H15M"],
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByText(/1 stop/)).toBeInTheDocument();
+    expect(screen.getByText(/MAD/)).toBeInTheDocument();
+    expect(screen.getByText(/2h 15min/)).toBeInTheDocument();
+  });
+
+  it("applies orange class for tight layover (<60min)", () => {
+    // 45min layover — risky connection, orange warning.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT11H30M",
+            stops_count: 1,
+            intermediate_airports: ["AMS"],
+            layover_durations_iso: ["PT45M"],
+          },
+        }}
+        language="en"
+      />,
+    );
+    const layoverNode = screen.getByTestId("layover-detail");
+    expect(layoverNode.className).toMatch(/orange/);
+  });
+
+  it("applies orange class for long layover (>5h)", () => {
+    // 6h 30min layover — boring layover, orange warning.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT16H30M",
+            stops_count: 1,
+            intermediate_airports: ["FRA"],
+            layover_durations_iso: ["PT6H30M"],
+          },
+        }}
+        language="en"
+      />,
+    );
+    const layoverNode = screen.getByTestId("layover-detail");
+    expect(layoverNode.className).toMatch(/orange/);
+  });
+
+  it("renders '2 stops · IST, FRA' for two stops (no individual layover durations)", () => {
+    // 2 stops — we don't surface individual layover lengths, just the IATAs
+    // comma-joined.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT19H40M",
+            stops_count: 2,
+            intermediate_airports: ["IST", "FRA"],
+            layover_durations_iso: [],
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByText(/2 stops/)).toBeInTheDocument();
+    expect(screen.getByText(/IST/)).toBeInTheDocument();
+    expect(screen.getByText(/FRA/)).toBeInTheDocument();
+  });
+
+  it("renders '+1' suffix when arrival date differs from departure", () => {
+    // Red-eye flight: departs Jun 2 22:50 UTC, arrives Jun 3 18:30 UTC.
+    // The arrival time must carry a "+1" suffix so the user notices the
+    // day rollover.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            departure_datetime: "2026-06-02T22:50:00+00:00",
+            arrival_datetime: "2026-06-03T18:30:00+00:00",
+            duration_iso: "PT19H40M",
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByText(/\+1/)).toBeInTheDocument();
+  });
+});
+
+describe("OptionCard — Phase 10 French language", () => {
+  it("renders FR singular '1 escale' and 'à MAD' layover preposition", () => {
+    // Regression guard for B-FE1 (PR #49 review): SliceInfoRow previously
+    // hard-coded "1 stop · 2h 15min in MAD". A French user must see fully
+    // French copy on the new row — singular "escale" + "à" preposition.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT11H15M",
+            stops_count: 1,
+            intermediate_airports: ["MAD"],
+            layover_durations_iso: ["PT2H15M"],
+          },
+        }}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText(/1 escale/)).toBeInTheDocument();
+    expect(screen.getByText(/à MAD/)).toBeInTheDocument();
+    // No English residue:
+    expect(screen.queryByText(/1 stop/)).toBeNull();
+    expect(screen.queryByText(/ in MAD/)).toBeNull();
+  });
+
+  it("renders FR plural 'escales' for 2+ stops", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT19H40M",
+            stops_count: 2,
+            intermediate_airports: ["IST", "FRA"],
+            layover_durations_iso: [],
+          },
+        }}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText(/2 escales/)).toBeInTheDocument();
+    expect(screen.queryByText(/2 stops/)).toBeNull();
+  });
+
+  it("renders FR leg labels 'Aller' / 'Retour' on a round-trip", () => {
+    // Direct (same word EN+FR) on both legs — but the leg labels must
+    // localise. Two "Direct" instances expected (one per slice).
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT8H21M",
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
+          },
+          return_leg: {
+            origin_iata: "JFK",
+            destination_iata: "CDG",
+            departure_datetime: "2026-06-08T14:30:00",
+            arrival_datetime: "2026-06-08T21:45:00",
+            duration_iso: "PT7H15M",
+            segments: [],
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
+          },
+        }}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText(/Aller/)).toBeInTheDocument();
+    expect(screen.getByText(/Retour/)).toBeInTheDocument();
+    expect(screen.getAllByText("Direct").length).toBeGreaterThanOrEqual(2);
+    // No English residue:
+    expect(screen.queryByText(/Outbound/)).toBeNull();
+    expect(screen.queryByText("Return")).toBeNull();
   });
 });

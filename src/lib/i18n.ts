@@ -61,6 +61,13 @@ type Strings = {
       string, string, string, string, string, string,
       string, string, string, string, string, string,
     ];
+    // Phase 10 — duration + stops + layover row labels.
+    // FR/EN parity for the SliceInfoRow under each flight slice.
+    directLabel: string;
+    stopsLabel: (n: number) => string;
+    layoverIn: (duration: string, airport: string) => string;
+    legLabelOutbound: string;
+    legLabelReturn: string;
   };
   bookingCard: {
     title: string;
@@ -182,6 +189,12 @@ const EN: Strings = {
       "Jan", "Feb", "Mar", "Apr", "May", "Jun",
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ],
+    directLabel: "Direct",
+    stopsLabel: (n: number) => (n === 1 ? "1 stop" : `${n} stops`),
+    layoverIn: (duration: string, airport: string) =>
+      ` · ${duration} in ${airport}`,
+    legLabelOutbound: "Outbound",
+    legLabelReturn: "Return",
   },
   bookingCard: {
     title: "Booking confirmed",
@@ -299,6 +312,12 @@ const FR: Strings = {
       "janv.", "févr.", "mars", "avr.", "mai", "juin",
       "juil.", "août", "sept.", "oct.", "nov.", "déc.",
     ],
+    directLabel: "Direct",
+    stopsLabel: (n: number) => (n === 1 ? "1 escale" : `${n} escales`),
+    layoverIn: (duration: string, airport: string) =>
+      ` · ${duration} à ${airport}`,
+    legLabelOutbound: "Aller",
+    legLabelReturn: "Retour",
   },
   bookingCard: {
     title: "Réservation confirmée",

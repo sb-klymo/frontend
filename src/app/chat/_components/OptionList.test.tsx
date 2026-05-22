@@ -19,6 +19,11 @@ function _offer(overrides: Partial<DisplayedOffer> = {}): DisplayedOffer {
       departure_datetime: "2026-06-01T08:00:00+00:00",
       arrival_datetime: "2026-06-01T17:30:00+00:00",
       duration_iso: "PT9H30M",
+      // Phase 10 — direct flight default fixture (no stops).
+      segments: [],
+      stops_count: 0,
+      intermediate_airports: [],
+      layover_durations_iso: [],
     },
     return_leg: null,
     policy_status: "auto_approved",
