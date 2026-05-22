@@ -13,6 +13,7 @@
  */
 
 import type { BookingDetails, BookingLeg } from "@/hooks/useChatStream";
+import { formatMinutes } from "@/lib/duration";
 import { strings, type SupportedLanguage } from "@/lib/i18n";
 
 export type BookingConfirmationCardProps = {
@@ -85,7 +86,7 @@ export function BookingConfirmationCard({
             className="font-medium text-gray-700"
             data-testid="booking-total-duration"
           >
-            {formatDuration(booking.total_duration_minutes, language)}
+            {formatMinutes(booking.total_duration_minutes, language)}
           </dd>
         </div>
       ) : null}
@@ -178,19 +179,4 @@ function formatDateTime(iso: string, language: SupportedLanguage): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-}
-
-/**
- * Render a whole number of minutes as "Xh Ymin" (or "Xh" / "Ymin" when
- * one side is zero). FR/EN use the same compact form — "4h 30min"
- * reads natively in both languages, and the unit suffix avoids the
- * ambiguity of "4:30" (which could mean a time-of-day).
- */
-function formatDuration(totalMinutes: number, language: SupportedLanguage): string {
-  if (totalMinutes <= 0) return "";
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return language === "fr" ? `${minutes} min` : `${minutes}min`;
-  if (minutes === 0) return `${hours}h`;
-  return language === "fr" ? `${hours}h ${minutes}min` : `${hours}h ${minutes}min`;
 }
