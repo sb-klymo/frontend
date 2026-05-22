@@ -34,6 +34,16 @@ export type ChatWindowProps = {
   send: (text: string) => void | Promise<void>;
   stop: () => void;
   reset: () => void;
+  /** Fires when Realtime delivers a terminal approval status (approved /
+   * rejected / expired / canceled) to a chat tab the user is currently
+   * watching. The handler should trigger `resumeApproval(conversationId)`
+   * so the post-decision AIMessage from `_reentry_approved` /
+   * `_reentry_rejected` reaches the chat tab via SSE — without this, the
+   * card morphs visually but the resume bubble never appears (the backend
+   * decide endpoint no longer eagerly advances the graph since the
+   * 2026-05-22 hotfix). Optional: when undefined (or null conversationId
+   * at mount), the card morph is still visual-only. */
+  onApprovalDecided?: () => void;
 };
 
 export function ChatWindow({
@@ -46,6 +56,7 @@ export function ChatWindow({
   send,
   stop,
   reset,
+  onApprovalDecided,
 }: ChatWindowProps) {
   const draft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
@@ -172,6 +183,7 @@ export function ChatWindow({
                   <ApprovalPendingCard
                     approval={m.approvalRequest}
                     language={language}
+                    onDecided={onApprovalDecided}
                   />
                 </Fragment>
               );
