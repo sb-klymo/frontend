@@ -37,6 +37,12 @@ type CurrentUser = {
   payment_mode?: PaymentMode;
   stripe_payment_method_id?: string | null;
   is_team?: boolean;
+  account_type?: "company" | "individual";
+  // Phase 8 Agent Wallet: true when the org has a saved company card.
+  // Default false for individual users (no org). Optional for defensive
+  // forward-compat — if the backend field is absent, we fall through to
+  // "not saved" state which is safe.
+  org_payment_method_saved?: boolean;
 };
 
 const STRIPE_CUSTOMER_DEEPLINK = "https://dashboard.stripe.com/test/customers";
@@ -203,6 +209,42 @@ export function PaymentStatusSection({
                     >
                       {pmId}
                     </a>
+                  </dd>
+                </div>
+              )}
+              {data.account_type === "company" && (
+                <div
+                  className="mt-2 border-t border-gray-200 pt-2"
+                  data-testid="dev-payment-status-org-card-section"
+                >
+                  <dt className="text-gray-500">
+                    {language === "fr" ? "Carte d'entreprise" : "Company card"}
+                  </dt>
+                  <dd
+                    className={`mt-0.5 flex items-center gap-1 ${
+                      data.org_payment_method_saved
+                        ? "text-green-700"
+                        : "text-amber-700"
+                    }`}
+                    data-testid="dev-payment-status-org-card"
+                  >
+                    {data.org_payment_method_saved ? (
+                      <>
+                        <span aria-hidden="true">✓</span>
+                        <span>
+                          {language === "fr" ? "enregistrée" : "saved"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden="true">⚠</span>
+                        <span>
+                          {language === "fr"
+                            ? "non enregistrée — administrateur doit finaliser"
+                            : "not saved — admin needs to complete setup"}
+                        </span>
+                      </>
+                    )}
                   </dd>
                 </div>
               )}
