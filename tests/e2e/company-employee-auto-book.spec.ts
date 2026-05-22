@@ -119,18 +119,27 @@ test("company employee auto-books — no Checkout link, BookingConfirmationCard 
   const input = page.getByPlaceholder(/ask about a trip/i);
   await input.fill(TRIP_QUERY);
   await input.press("Enter");
-  await page.waitForTimeout(30_000);
+  // Wait for the option list to render before sending the next message.
+  await expect(
+    page.getByText(/Option 1/i).first(),
+  ).toBeVisible({ timeout: 60_000 });
 
   // Pick option 1
   await input.fill("option 1");
   await input.press("Enter");
-  await page.waitForTimeout(30_000);
+  // Wait for the extras / ancillary prompt before skipping.
+  await expect(
+    page.getByText(/extra|bagage|siège|priorité|autre chose|skip|non|pas besoin/i).last(),
+  ).toBeVisible({ timeout: 60_000 });
 
   // Skip extras
   await input.fill("non c'est bon");
   await input.press("Enter");
-  // K1 chain (Stripe + Duffel stub) takes longer than a typical turn
-  await page.waitForTimeout(45_000);
+  // K1 chain (Stripe + Duffel stub) takes longer than a typical turn —
+  // poll until BookingConfirmationCard text appears instead of sleeping.
+  await expect(
+    page.getByText(/PNR|booking reference|réservation|billet/i).first(),
+  ).toBeVisible({ timeout: 90_000 });
 
   // ASSERTION 1: No "Payer maintenant" CTA appears (the Checkout link card)
   const checkoutLinkCount = await page
@@ -138,8 +147,9 @@ test("company employee auto-books — no Checkout link, BookingConfirmationCard 
     .count();
   expect(checkoutLinkCount).toBe(0);
 
-  // ASSERTION 2: BookingConfirmationCard appears (test by checking for PNR text)
+  // ASSERTION 2: BookingConfirmationCard appears — already polled above (90s),
+  // this is a belt-and-suspenders re-check with a short grace window.
   await expect(
     page.getByText(/PNR|booking reference|réservation/i).first(),
-  ).toBeVisible({ timeout: 5_000 });
+  ).toBeVisible({ timeout: 2_000 });
 });

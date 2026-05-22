@@ -67,10 +67,13 @@ test("company admin onboarding flow — company card saved on org row", async ({
 
   // Walk through company onboarding (company name + cap + threshold)
   const input = page.getByPlaceholder(/ask about a trip/i);
+  // Onboarding is a scripted 5-step turn sequence; each turn is short
+  // (no K1 chain, no search). A short fixed pause between messages is
+  // pragmatic here — the final terminal state is assertion-verified below.
   for (const message of ["bonjour", "ACME Test E2E", "ok pour 500€", "oui", "ok"]) {
     await input.fill(message);
     await input.press("Enter");
-    await page.waitForTimeout(15_000);
+    await page.waitForTimeout(10_000);
   }
 
   // At this point bot should be parked at onboarding_payment_redirect.

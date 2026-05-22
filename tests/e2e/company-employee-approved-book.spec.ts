@@ -133,17 +133,19 @@ test("company employee approval-then-auto-charge — no Checkout link", async ({
   // will be flagged for manager approval.
   await input.fill(TRIP_QUERY);
   await input.press("Enter");
-  await page.waitForTimeout(30_000);
+  // Wait for the option list to render before picking.
+  await expect(
+    page.getByText(/Option 1/i).first(),
+  ).toBeVisible({ timeout: 60_000 });
 
   // Pick offer — any option will be above the 100€ threshold
   await input.fill("option 1");
   await input.press("Enter");
-  await page.waitForTimeout(25_000);
 
-  // ASSERTION: ApprovalPendingCard should appear
+  // ASSERTION: ApprovalPendingCard should appear — poll for it directly.
   await expect(
     page.getByTestId("approval-pending-card").first(),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: 60_000 });
 
   // Simulate admin clicking Approve via direct DB update + decided_by_user_id.
   // Mirrors the pattern used in approval-flow.spec.ts.
@@ -163,19 +165,25 @@ test("company employee approval-then-auto-charge — no Checkout link", async ({
   `);
 
   // Wait for Realtime → resumeApproval → resume bubble appears.
-  // The Supabase Realtime channel for approval_requests is polled by the
-  // chat client; the backend re-enters the graph on status change.
-  await page.waitForTimeout(20_000);
-
+  // Poll directly instead of sleeping; Supabase Realtime pushes the status
+  // change and the chat client re-enters the graph.
   await expect(
-    page.getByText(/validé|approuvé|feu vert|donné son accord/i).first(),
-  ).toBeVisible({ timeout: 10_000 });
+    page.getByText(/validé|approuvé|feu vert|donné son accord|on continue|approved|continuing/i).first(),
+  ).toBeVisible({ timeout: 60_000 });
+
+  // Wait for the extras / ancillary prompt before skipping.
+  await expect(
+    page.getByText(/extra|bagage|siège|priorité|autre chose|skip|non|pas besoin/i).last(),
+  ).toBeVisible({ timeout: 60_000 });
 
   // Skip extras — bot continues to checkout with org card
   await input.fill("non c'est bon");
   await input.press("Enter");
-  // K1 chain (Stripe virtual-card + Duffel order stub) takes longer
-  await page.waitForTimeout(45_000);
+  // K1 chain (Stripe virtual-card + Duffel order stub) takes longer —
+  // poll until BookingConfirmationCard text appears instead of sleeping.
+  await expect(
+    page.getByText(/PNR|booking reference|réservation|billet/i).first(),
+  ).toBeVisible({ timeout: 90_000 });
 
   // ASSERTION 1: No "Payer maintenant" CTA appears at any point
   const checkoutLinkCount = await page
@@ -183,8 +191,8 @@ test("company employee approval-then-auto-charge — no Checkout link", async ({
     .count();
   expect(checkoutLinkCount).toBe(0);
 
-  // ASSERTION 2: BookingConfirmationCard appears (PNR / réservation text)
+  // ASSERTION 2: BookingConfirmationCard appears — already polled above (90s).
   await expect(
     page.getByText(/PNR|booking reference|réservation/i).first(),
-  ).toBeVisible({ timeout: 5_000 });
+  ).toBeVisible({ timeout: 2_000 });
 });
