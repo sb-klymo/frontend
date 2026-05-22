@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { signupAndOnboard } from "./_fixtures/userSetup";
+
 /**
  * Plan B (M2-bis) — demo-critical end-to-end happy path.
  *
@@ -26,20 +28,15 @@ import { expect, test } from "@playwright/test";
 test("Plan B happy path: chat → option pick → CheckoutPaymentCard with Stripe URL", async ({
   page,
 }) => {
-  // 1. Fresh user — defaults to checkout_fallback so the agent routes
+  // 1. Fresh user — seeded as fully onboarded individual with no
+  // saved card → defaults to checkout_fallback so the agent routes
   // to the Stripe Checkout link path rather than auto-charge.
-  const email = `e2e-planb-${Date.now()}@klymo.local`;
-  await page.goto("/signup");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("password123456");
-  await page.getByRole("button", { name: /create account/i }).click();
-  await expect(page).toHaveURL(/\/chat$/);
+  const { input } = await signupAndOnboard(page, { prefix: "planb" });
 
   // 2. Send an unambiguous trip request — Marseille and Toulouse are
   // single-airport cities so the agent doesn't need to disambiguate
   // (avoids the "Paris a trois aéroports" branch which would force
   // an extra clarifying turn before reaching the option list).
-  const input = page.getByPlaceholder(/ask about a trip/i);
   await input.fill(
     "Vol Marseille → Toulouse demain, juste 1 passager, classe éco",
   );
@@ -65,11 +62,22 @@ test("Plan B happy path: chat → option pick → CheckoutPaymentCard with Strip
   await input.fill("option 1");
   await input.press("Enter");
 
-  // 5. CheckoutPaymentCard renders. The post-Checkout chain
+  // 5. PR-63 inserted extras_node BETWEEN select and checkout — the agent
+  // now asks "Autre chose pour ce voyage ?" before routing to Stripe.
+  // Wait for the prompt, decline, then proceed to the checkout assertion.
+  await expect(
+    page
+      .getByText(/autre chose|anything else|bagage|bag|luggage|valise|sac|extra|ajout/i)
+      .last(),
+  ).toBeVisible({ timeout: 30_000 });
+  await input.fill("non rien d'autre");
+  await input.press("Enter");
+
+  // 6. CheckoutPaymentCard renders. The post-Checkout chain
   // (M2-bis virtual card mint + Duffel order + Realtime morph) is
   // out of scope for this E2E — see header docstring.
   const checkoutCard = page.getByTestId("checkout-payment-card");
-  await expect(checkoutCard).toBeVisible({ timeout: 30_000 });
+  await expect(checkoutCard).toBeVisible({ timeout: 60_000 });
 
   // 6. The Pay-now link points at a real Stripe Checkout session
   // URL. Pre-fix bugs left this empty/broken in dev; pinning the
@@ -106,14 +114,7 @@ test("option-list header is rephrased contextually (no static i18n)", async ({
    * output is a contextual rephrase like "MRS → TLS demain en éco,
    * voici 3 vols :".
    */
-  const email = `e2e-humanize-${Date.now()}@klymo.local`;
-  await page.goto("/signup");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("password123456");
-  await page.getByRole("button", { name: /create account/i }).click();
-  await expect(page).toHaveURL(/\/chat$/);
-
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const { input } = await signupAndOnboard(page, { prefix: "humanize" });
   await input.fill("Vol Marseille → Toulouse demain en éco");
   await input.press("Enter");
 
