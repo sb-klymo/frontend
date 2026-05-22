@@ -299,3 +299,88 @@ describe("OptionCard — Phase 10 duration + stops + layover", () => {
     expect(screen.getByText(/\+1/)).toBeInTheDocument();
   });
 });
+
+describe("OptionCard — Phase 10 French language", () => {
+  it("renders FR singular '1 escale' and 'à MAD' layover preposition", () => {
+    // Regression guard for B-FE1 (PR #49 review): SliceInfoRow previously
+    // hard-coded "1 stop · 2h 15min in MAD". A French user must see fully
+    // French copy on the new row — singular "escale" + "à" preposition.
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT11H15M",
+            stops_count: 1,
+            intermediate_airports: ["MAD"],
+            layover_durations_iso: ["PT2H15M"],
+          },
+        }}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText(/1 escale/)).toBeInTheDocument();
+    expect(screen.getByText(/à MAD/)).toBeInTheDocument();
+    // No English residue:
+    expect(screen.queryByText(/1 stop/)).toBeNull();
+    expect(screen.queryByText(/ in MAD/)).toBeNull();
+  });
+
+  it("renders FR plural 'escales' for 2+ stops", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT19H40M",
+            stops_count: 2,
+            intermediate_airports: ["IST", "FRA"],
+            layover_durations_iso: [],
+          },
+        }}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText(/2 escales/)).toBeInTheDocument();
+    expect(screen.queryByText(/2 stops/)).toBeNull();
+  });
+
+  it("renders FR leg labels 'Aller' / 'Retour' on a round-trip", () => {
+    // Direct (same word EN+FR) on both legs — but the leg labels must
+    // localise. Two "Direct" instances expected (one per slice).
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          outbound: {
+            ...baseOffer.outbound,
+            duration_iso: "PT8H21M",
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
+          },
+          return_leg: {
+            origin_iata: "JFK",
+            destination_iata: "CDG",
+            departure_datetime: "2026-06-08T14:30:00",
+            arrival_datetime: "2026-06-08T21:45:00",
+            duration_iso: "PT7H15M",
+            segments: [],
+            stops_count: 0,
+            intermediate_airports: [],
+            layover_durations_iso: [],
+          },
+        }}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText(/Aller/)).toBeInTheDocument();
+    expect(screen.getByText(/Retour/)).toBeInTheDocument();
+    expect(screen.getAllByText("Direct").length).toBeGreaterThanOrEqual(2);
+    // No English residue:
+    expect(screen.queryByText(/Outbound/)).toBeNull();
+    expect(screen.queryByText("Return")).toBeNull();
+  });
+});

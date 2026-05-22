@@ -118,11 +118,10 @@ type SliceInfoRowProps = {
  *   "19h 40min · 2 stops · IST, FRA"       (2+ stops, no per-gap detail)
  */
 function SliceInfoRow({ slice, language }: SliceInfoRowProps) {
+  const t = strings(language).optionCard;
   const durationText = formatDuration(slice.duration_iso, language);
   const isDirect = slice.stops_count === 0;
-  const stopsText = isDirect
-    ? "Direct"
-    : `${slice.stops_count} ${slice.stops_count === 1 ? "stop" : "stops"}`;
+  const stopsText = isDirect ? t.directLabel : t.stopsLabel(slice.stops_count);
 
   let layoverNode: React.ReactNode = null;
   if (slice.stops_count === 1 && slice.layover_durations_iso.length === 1) {
@@ -133,11 +132,15 @@ function SliceInfoRow({ slice, language }: SliceInfoRowProps) {
       const cls = layoverClassName(level);
       const warning = level !== "normal" ? " ⚠" : "";
       const airport = slice.intermediate_airports[0] ?? "";
-      layoverNode = (
-        <span className={cls} data-testid="layover-detail">
-          {` · ${layoverMins} in ${airport}${warning}`}
-        </span>
-      );
+      // Skip the layover span entirely when the airport IATA is missing —
+      // avoids " · 2h 15min in  ⚠" (double space + dangling preposition).
+      if (airport) {
+        layoverNode = (
+          <span className={cls} data-testid="layover-detail">
+            {`${t.layoverIn(layoverMins, airport)}${warning}`}
+          </span>
+        );
+      }
     }
   } else if (slice.stops_count >= 2) {
     const shown = slice.intermediate_airports.slice(0, 2).join(", ");
@@ -223,19 +226,13 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
             <SliceLine
               slice={offer.outbound}
               language={language}
-              label={
-                offer.return_leg
-                  ? language === "fr"
-                    ? "Aller"
-                    : "Outbound"
-                  : undefined
-              }
+              label={offer.return_leg ? t.legLabelOutbound : undefined}
             />
             {offer.return_leg && (
               <SliceLine
                 slice={offer.return_leg}
                 language={language}
-                label={language === "fr" ? "Retour" : "Return"}
+                label={t.legLabelReturn}
               />
             )}
           </div>
