@@ -17,7 +17,7 @@
  * the current value via a ref at send-time.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useChatStream } from "@/hooks/useChatStream";
 import { DEV_BUILD } from "@/lib/build-mode";
@@ -43,7 +43,17 @@ export function ChatRoot({ isTeam = false }: { isTeam?: boolean }) {
     devPolicyOverride: findPreset(policyPreset).config,
     devVibeOverride: findVoicePreset(voicePreset).config,
   });
+  const { checkPendingApprovals } = stream;
   const conversationId = useChatStore((s) => s.conversationId);
+
+  // Task 14 — on mount, poll /me/pending-approvals and auto-resume any
+  // approval conversation where the manager decided while the user was
+  // offline (Realtime never delivered the UPDATE in that case).
+  // `checkPendingApprovals` is stable across renders (useCallback in
+  // useChatStream) but React lint still requires it in the dep array.
+  useEffect(() => {
+    void checkPendingApprovals();
+  }, [checkPendingApprovals]);
 
   const showDevPanel = DEV_BUILD || isTeam;
 

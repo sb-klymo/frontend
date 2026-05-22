@@ -71,11 +71,11 @@ export const POLICY_PRESETS: PolicyPreset[] = [
     id: "manager_only",
     label: { fr: "Approbation manager", en: "Manager approval" },
     hint: {
-      fr: "Seuil 300 € — tous les vols passent en validation manager",
-      en: "300€ threshold — every offer routes to manager approval",
+      fr: "Seuil 50 € — tous les vols passent en validation manager",
+      en: "50€ threshold — every offer routes to manager approval",
     },
     config: {
-      manager_approval_threshold_cents: 30_000,
+      manager_approval_threshold_cents: 5_000,
     },
   },
   {

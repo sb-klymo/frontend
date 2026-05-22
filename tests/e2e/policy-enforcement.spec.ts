@@ -1,42 +1,30 @@
 /**
- * Policy enforcement — pins the CURRENT behavior of the policy engine
- * vs the bot's downstream actions, plus documents the spec
- * expectation that's NOT YET WIRED.
+ * Policy enforcement — pins the behavior of the policy engine
+ * vs the bot's downstream actions.
  *
  * ## What we found in the 2026-05-21 audit
  *
  * The user's `Claude for Chrome` smoke surfaced two policy
  * observations:
  *
- * 1. `manager_approval_required` / `finance_approval_required` are
+ * 1. `manager_approval_required` / `finance_approval_required` were
  *    rendered as warning badges on the OptionCard but the bot
- *    proceeds to book the flagged offer normally. No approval gate
- *    fires in `select_node` or `checkout_node`.
+ *    proceeded to book the flagged offer normally. As of Phase 6
+ *    (2026-05-21), the gate is wired: `select_node` now routes
+ *    flagged offers to `approval_required_node`, which emits an
+ *    approval-pending card instead of proceeding to the extras prompt.
  * 2. `policy_blocked` offers are FILTERED OUT before display
  *    (see `present_options.py:107`). Users never see them.
  *
- * Per `PRODUCT_SPEC.md` (lines 231 + 329 + 399), the spec model is
- * `compliant | needs_approval | blocked` with an `approvalMode`
- * config, implying that `needs_approval` should pause/gate the
- * booking. The current implementation labels but doesn't gate —
- * a real product gap vs the spec.
- *
  * ## What these tests do
  *
- * - **`flagged offer is selectable + booking proceeds`** — pins the
- *   CURRENT (warn-only) behavior. Passes today; turns red if a future
- *   change silently breaks the current path (e.g. a regression where
- *   the bot refuses to book a flagged offer).
+ * - **`SPEC: flagged offer SHOULD pause for approval`** — the gate is
+ *   now wired. This test pins the gate-fires-on-flagged-offer behavior:
+ *   picking a flagged offer must produce an approval-pending card, not
+ *   the extras prompt.
  *
- * - **`flagged offer should pause for approval` (`test.fixme`)** —
- *   documents the spec expectation. Skipped today; should be enabled
- *   when the approval gate lands in `select_node` or
- *   `checkout_node`. The assertion shape (waiting for an
- *   "approval-required" message instead of the extras prompt) is the
- *   contract the gate must meet.
- *
- * - **`block_expensive cap filters expensive offers out of the list`**
- *   — pins the FILTER behavior (by design per `present_options.py:107`).
+ * - **`block_expensive preset doesn't crash the chat`** — pins the
+ *   FILTER behavior (by design per `present_options.py:107`).
  *   Currently runs against `live_search_stub_order` Duffel test
  *   inventory, so the option count is non-deterministic; the test
  *   asserts a less-stringent invariant (the chat doesn't crash, an
@@ -46,7 +34,7 @@
  *
  * All tests sign up a fresh user (defaults to `checkout_fallback`
  * which is fine — checkout_node doesn't fire here; we stop at the
- * extras prompt downstream of select_node).
+ * approval-pending card downstream of select_node).
  *
  * Dev panel policy presets ship a `dev_policy_override` per chat
  * request (honored in dev mode for any user). Active preset is read
@@ -99,69 +87,21 @@ test.describe("Policy enforcement (current behavior pinned)", () => {
   // upper bound under `live_search_stub_order`.
   test.setTimeout(120_000);
 
-  test("flagged offer is selectable and booking proceeds (warn-only)", async ({
-    page,
-  }) => {
-    // `manager_only` preset: 300 EUR threshold. Any offer > 300 EUR
-    // flags as `manager_approval_required`. Under DUFFEL_MODE=stub
-    // (450/540/620 EUR) all three flag; under live_search_stub_order
-    // most short-haul flights still exceed 300 EUR so at least one
-    // option should carry the badge.
-    await signupAndOpenChat(page, "warn-only");
-    await activatePolicyPreset(page, "manager_only");
-    await sendQuery(page, TRIP_QUERY);
-
-    // Wait for option list.
-    await expect(page.getByText(/Option 1/i).first()).toBeVisible({
-      timeout: 60_000,
-    });
-
-    // At least one option carries an approval badge — the badge text
-    // is "approbation manager requise" (FR) / "requires manager
-    // approval" (EN), wired via `optionCard.badgeManagerApproval` in
-    // `i18n.ts`. We use a permissive regex to handle either locale.
-    await expect(
-      page
-        .getByText(/approbation manager|approbation finance|requires.*approval/i)
-        .first(),
-    ).toBeVisible({ timeout: 5_000 });
-
-    // Pick option 1 — under `manager_only` it's flagged but should
-    // still be selectable today (the spec says it should gate; the
-    // current implementation lets it through).
-    await sendQuery(page, "option 1");
-
-    // CURRENT BEHAVIOR: booking proceeds through select → extras gate.
-    // The extras prompt arrives as the next bot bubble. If a future
-    // change adds an approval gate, this assertion will fail (and the
-    // `test.fixme` below should be enabled in its place).
-    await expect(
-      page
-        .getByText(
-          /autre chose|anything else|bagage|bag|luggage|valise|sac|extra|ajout|sièges|seat|priorité/i,
-        )
-        .last(),
-    ).toBeVisible({ timeout: 60_000 });
-  });
-
-  test.fixme(
-    "SPEC: flagged offer SHOULD pause for approval (gate not yet wired)",
+  test(
+    "flagged offer pauses for approval (gate wired, Phase 6)",
     async ({ page }) => {
-      // Documents the desired behavior per PRODUCT_SPEC.md §6 +
-      // approvalMode field. ENABLE THIS TEST (drop the .fixme) the
-      // day `select_node` or `checkout_node` learns to gate on
-      // `policy_status in ("manager_approval_required",
-      // "finance_approval_required")` and emit an approval-required
-      // message instead of routing to the extras gate.
+      // Gate is now wired (Phase 6): select_node routes flagged offers to
+      // approval_required_node which emits _PENDING_TEMPLATE:
+      //   "Cette réservation à {amount} {currency} nécessite l'approbation de
+      //    votre manager. Je leur ai envoyé un mail — je vous tiens au courant
+      //    dès qu'ils répondent."
       //
-      // Expected bot output (rough sketch — actual wording TBD):
-      //   "This flight requires manager approval before booking.
-      //    I've routed the request — they'll get an email shortly."
+      // phrase() rephrases the seed text, so we assert on stable substrings:
+      //   • "approbation" or "approval" — from the pending template
+      //   • "mail" or "email" or "notif" — the email-sent confirmation
       //
-      // Or a HITL interrupt that waits for the manager's response.
-      // The exact UX is a product decision; this test pins the
-      // assertion that the bot does NOT proceed to the extras gate
-      // when the picked offer carries an approval-required flag.
+      // The extras prompt must NOT appear in this turn: the workflow_stage
+      // advances to "awaiting_approval", not "awaiting_extras_choice".
       await signupAndOpenChat(page, "spec-gate");
       await activatePolicyPreset(page, "manager_only");
       await sendQuery(page, TRIP_QUERY);
@@ -170,13 +110,14 @@ test.describe("Policy enforcement (current behavior pinned)", () => {
       });
       await sendQuery(page, "option 1");
 
-      // Desired: an approval-required bubble appears INSTEAD of the
-      // extras prompt. Pattern guesses (refine when gate ships):
+      // Approval-required bubble: _PENDING_TEMPLATE contains "approbation"
+      // (FR) or is rephrased to contain "approval" (EN). The template also
+      // mentions "mail" / email notification.
       await expect(
-        page.getByText(/approval|approbation|manager.*notif|email.*sent/i),
+        page.getByText(/approval|approbation|mail.*envoyé|email.*sent|je leur.*envoyé/i),
       ).toBeVisible({ timeout: 30_000 });
 
-      // And: the extras prompt should NOT appear in the same turn.
+      // The extras prompt must NOT appear in the same turn.
       await expect(
         page.getByText(
           /autre chose|anything else|bagage|bag|luggage|valise|sac/i,

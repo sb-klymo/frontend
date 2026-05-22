@@ -6,9 +6,30 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { ChatMessage } from "@/hooks/useChatStream";
+import type { ApprovalRequestDetails, ChatMessage } from "@/hooks/useChatStream";
+
+// Supabase mock — ApprovalPendingCard renders useApprovalRealtime which
+// creates a Supabase channel. Stub it out so ChatWindow tests don't need a
+// real WS or NEXT_PUBLIC_* env vars. Mirrors the mock in
+// ApprovalPendingCard.test.tsx.
+const mockOn = vi.fn().mockReturnThis();
+const mockSubscribe = vi.fn().mockReturnThis();
+const mockChannel = vi.fn(() => ({ on: mockOn, subscribe: mockSubscribe }));
+const mockRemoveChannel = vi.fn();
+vi.mock("@/lib/supabase/browser", () => ({
+  createSupabaseBrowserClient: () => ({
+    channel: mockChannel,
+    removeChannel: mockRemoveChannel,
+    auth: {
+      getSession: vi.fn(async () => ({
+        data: { session: { access_token: "test-jwt" } },
+      })),
+    },
+    realtime: { setAuth: vi.fn() },
+  }),
+}));
 
 import { ChatWindow } from "./ChatWindow";
 
@@ -371,5 +392,102 @@ describe("ChatWindow — booking message renders text bubble + card together", (
     // No stray assistant bubble — same detection pattern as the
     // cancellation test above.
     expect(container.querySelector(".bg-gray-100")).toBeNull();
+  });
+});
+
+describe("ChatWindow — approval request renders text + card together", () => {
+  /**
+   * Phase 6: when a message carries an `approvalRequest` payload, the
+   * renderer must emit BOTH the assistant's warm phrasing bubble AND the
+   * `ApprovalPendingCard` below it (same Fragment pattern as `m.booking`).
+   *
+   * The `approvalRequest` branch fires BEFORE `m.booking` so an offer
+   * awaiting approval is never rendered as a confirmed-and-payable card.
+   */
+
+  function _approvalMsg(
+    overrides: Partial<ApprovalRequestDetails> = {},
+  ): ChatMessage {
+    const approval: ApprovalRequestDetails = {
+      id: "apr-chat-test-1",
+      total: 350.0,
+      currency: "EUR",
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      approver_emails: ["boss@company.com"],
+      policy_reason: "Exceeds €300 limit",
+      status: "pending",
+      decision_reason: null,
+      decided_at: null,
+      decided_by_first_name: null,
+      ...overrides,
+    };
+    return {
+      id: "msg-apr-1",
+      role: "assistant",
+      content: "I've sent this to your manager for approval.",
+      approvalRequest: approval,
+    };
+  }
+
+  it("keeps the 'pending approval' text alongside the ApprovalPendingCard", () => {
+    _renderWindow({
+      messages: [
+        { id: "u1", role: "user", content: "option 2" },
+        _approvalMsg(),
+      ],
+      isStreaming: false,
+    });
+
+    // The ApprovalPendingCard renders.
+    expect(screen.getByTestId("approval-pending-card")).toBeInTheDocument();
+
+    // AND the warm phrasing bubble renders.
+    expect(
+      screen.getByText(/I've sent this to your manager for approval/),
+    ).toBeInTheDocument();
+  });
+
+  it("skips the empty bubble when the approval message has no content", () => {
+    const msg: ChatMessage = {
+      id: "msg-apr-2",
+      role: "assistant",
+      content: "",
+      approvalRequest: _approvalMsg().approvalRequest,
+    };
+    const { container } = _renderWindow({
+      messages: [{ id: "u1", role: "user", content: "option 2" }, msg],
+      isStreaming: false,
+    });
+
+    expect(screen.getByTestId("approval-pending-card")).toBeInTheDocument();
+    // No stray empty assistant bubble above the card.
+    expect(container.querySelector(".bg-gray-100")).toBeNull();
+  });
+
+  it("approval branch fires before booking branch (priority check)", () => {
+    // A message that (hypothetically) carries both fields should render
+    // the approval card, not the booking card. In practice this shouldn't
+    // occur, but the render order must be defensively correct.
+    const msg: ChatMessage = {
+      id: "msg-apr-3",
+      role: "assistant",
+      content: "Waiting for approval.",
+      approvalRequest: _approvalMsg().approvalRequest,
+      booking: {
+        trip_id: "trip-x",
+        booking_reference: "STUB999",
+        passenger_name: "Test User",
+        amount_cents: 35000,
+        currency: "EUR",
+        legs: [],
+      },
+    };
+    _renderWindow({
+      messages: [{ id: "u1", role: "user", content: "confirm" }, msg],
+      isStreaming: false,
+    });
+
+    expect(screen.getByTestId("approval-pending-card")).toBeInTheDocument();
+    expect(screen.queryByTestId("booking-confirmation-card")).toBeNull();
   });
 });
