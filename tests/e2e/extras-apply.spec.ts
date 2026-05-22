@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { signupAndOnboard } from "./_fixtures/userSetup";
+
 /**
  * Post-booking extras-apply happy path (Task 14 — phase-4/extras-apply-post-booking).
  *
@@ -55,18 +57,13 @@ test("pre-checkout extras prompt: user requests a bag before paying", async ({
   page,
 }) => {
   // 1. Fresh user — checkout_fallback payment mode (no card on file), so the
-  //    agent routes to Stripe Checkout rather than auto-charge.
-  const email = `e2e-extras-${Date.now()}@klymo.local`;
-  await page.goto("/signup");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("password123456");
-  await page.getByRole("button", { name: /create account/i }).click();
-  await expect(page).toHaveURL(/\/chat$/);
+  //    agent routes to Stripe Checkout rather than auto-charge. Seeded as
+  //    already-onboarded so the chat goes straight to trip flow.
+  const { input } = await signupAndOnboard(page, { prefix: "extras" });
 
   // 2. Send an unambiguous trip request — Marseille and Toulouse are
   //    single-airport cities so the agent goes directly to the option list
   //    without a disambiguation step.
-  const input = page.getByPlaceholder(/ask about a trip/i);
   await input.fill("Vol Marseille → Toulouse demain, juste 1 passager, classe éco");
   await input.press("Enter");
 
@@ -155,14 +152,7 @@ test("post-booking extras-apply: user says oui ajoute le bagage", async ({
   page,
 }) => {
   // Fresh user — same setup as above.
-  const email = `e2e-extras-oui-${Date.now()}@klymo.local`;
-  await page.goto("/signup");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("password123456");
-  await page.getByRole("button", { name: /create account/i }).click();
-  await expect(page).toHaveURL(/\/chat$/);
-
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const { input } = await signupAndOnboard(page, { prefix: "extras-oui" });
 
   // Drive to the option list.
   await input.fill("Vol Marseille → Toulouse demain, juste 1 passager, classe éco");
