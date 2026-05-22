@@ -10,6 +10,8 @@ type MeResponse = {
   email?: string | null;
   payment_mode?: "auto_charge" | "checkout_opt_in" | "checkout_fallback";
   stripe_payment_method_id?: string | null;
+  account_type?: "company" | "individual";
+  org_payment_method_saved?: boolean;
 };
 
 function mockFetch(payload: MeResponse | { error: string }, status = 200) {
@@ -152,6 +154,151 @@ describe("PaymentStatusSection", () => {
     );
     expect(screen.getByTestId("dev-payment-status-mode").textContent).toContain(
       "Checkout (opt-in)",
+    );
+  });
+
+  // ── Phase 8 Agent Wallet — company card status ─────────────────────────
+
+  it("shows 'Carte d'entreprise: ✓ enregistrée' for company user with org PM saved (FR)", async () => {
+    mockFetch({
+      id: "u-5",
+      email: "admin@acme.klymo.local",
+      payment_mode: "auto_charge",
+      stripe_payment_method_id: "pm_test_org",
+      account_type: "company",
+      org_payment_method_saved: true,
+    });
+
+    renderWithClient(<PaymentStatusSection {...defaultProps()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dev-payment-status-org-card-section")).toBeInTheDocument();
+    });
+
+    // Section label
+    expect(screen.getByTestId("dev-payment-status-org-card-section").textContent).toContain(
+      "Carte d'entreprise",
+    );
+    // Status row shows the ✓ saved marker
+    const orgCardStatus = screen.getByTestId("dev-payment-status-org-card");
+    expect(orgCardStatus.textContent).toContain("✓");
+    expect(orgCardStatus.textContent).toContain("enregistrée");
+    // Must NOT contain the ⚠ warning
+    expect(orgCardStatus.textContent).not.toContain("⚠");
+  });
+
+  it("shows 'Carte d'entreprise: ⚠ non enregistrée' for company user without org PM (FR)", async () => {
+    mockFetch({
+      id: "u-6",
+      email: "employee@acme.klymo.local",
+      payment_mode: "auto_charge",
+      stripe_payment_method_id: null,
+      account_type: "company",
+      org_payment_method_saved: false,
+    });
+
+    renderWithClient(<PaymentStatusSection {...defaultProps()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dev-payment-status-org-card-section")).toBeInTheDocument();
+    });
+
+    const orgCardStatus = screen.getByTestId("dev-payment-status-org-card");
+    expect(orgCardStatus.textContent).toContain("⚠");
+    expect(orgCardStatus.textContent).toContain("non enregistrée");
+    expect(orgCardStatus.textContent).toContain("administrateur");
+    // Must NOT contain the ✓ success marker
+    expect(orgCardStatus.textContent).not.toContain("✓");
+  });
+
+  it("does NOT render the company-card section for individual users", async () => {
+    mockFetch({
+      id: "u-7",
+      email: "personal@klymo.local",
+      payment_mode: "checkout_opt_in",
+      stripe_payment_method_id: "pm_individual",
+      account_type: "individual",
+      org_payment_method_saved: false,
+    });
+
+    renderWithClient(<PaymentStatusSection {...defaultProps()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dev-payment-status-fields")).toBeInTheDocument();
+    });
+
+    // The company-card section must be absent entirely
+    expect(screen.queryByTestId("dev-payment-status-org-card-section")).toBeNull();
+    expect(screen.queryByTestId("dev-payment-status-org-card")).toBeNull();
+  });
+
+  it("does NOT render the company-card section when account_type is absent (legacy user)", async () => {
+    mockFetch({
+      id: "u-8",
+      email: "legacy@klymo.local",
+      payment_mode: "auto_charge",
+      stripe_payment_method_id: "pm_legacy",
+      // No account_type field — pre-Phase-8 response shape
+    });
+
+    renderWithClient(<PaymentStatusSection {...defaultProps()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dev-payment-status-fields")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId("dev-payment-status-org-card-section")).toBeNull();
+  });
+
+  it("shows English company card labels when language='en' and org PM saved", async () => {
+    mockFetch({
+      id: "u-9",
+      email: "admin@acme.klymo.local",
+      payment_mode: "auto_charge",
+      stripe_payment_method_id: "pm_test_org",
+      account_type: "company",
+      org_payment_method_saved: true,
+    });
+
+    renderWithClient(
+      <PaymentStatusSection language="en" open={true} onToggle={vi.fn()} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dev-payment-status-org-card-section")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("dev-payment-status-org-card-section").textContent).toContain(
+      "Company card",
+    );
+    expect(screen.getByTestId("dev-payment-status-org-card").textContent).toContain(
+      "saved",
+    );
+  });
+
+  it("shows English 'not saved' warning when language='en' and org PM absent", async () => {
+    mockFetch({
+      id: "u-10",
+      email: "employee@acme.klymo.local",
+      payment_mode: "auto_charge",
+      stripe_payment_method_id: null,
+      account_type: "company",
+      org_payment_method_saved: false,
+    });
+
+    renderWithClient(
+      <PaymentStatusSection language="en" open={true} onToggle={vi.fn()} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dev-payment-status-org-card-section")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("dev-payment-status-org-card").textContent).toContain(
+      "not saved",
+    );
+    expect(screen.getByTestId("dev-payment-status-org-card").textContent).toContain(
+      "admin",
     );
   });
 });
