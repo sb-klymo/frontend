@@ -1180,6 +1180,25 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
           signal: controller.signal,
         });
 
+        // Backend gates company users without an org behind the pro-onboarding form.
+        // Treat HTTP 403 + code='company_onboarding_required' as a hard navigation —
+        // this can happen if the user reaches /chat via a stale tab, a deep link,
+        // or before the server-side guard in app/chat/page.tsx kicks in.
+        // Hard navigation (window.location.assign) — not router.push — is intentional:
+        // drops in-flight SSE/Realtime subs and forces the form page's Server Component
+        // to re-run its auth+state guard against fresh /me data.
+        if (response.status === 403) {
+          try {
+            const body = (await response.clone().json()) as { code?: string };
+            if (body.code === "company_onboarding_required") {
+              window.location.assign("/onboarding/company-profile");
+              return;
+            }
+          } catch {
+            // Body wasn't JSON — fall through to normal error handling.
+          }
+        }
+
         if (!response.ok || !response.body) {
           throw new Error(`Chat stream failed: ${response.status}`);
         }
