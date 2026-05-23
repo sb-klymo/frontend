@@ -40,6 +40,10 @@ describe("SignupPage", () => {
   });
 
   it("passes account_type='company' to supabase.auth.signUp when Company is selected", async () => {
+    // After this push, /chat's Server Component (app/chat/page.tsx) reads
+    // /me and redirects company-without-org users to /onboarding/company-profile.
+    // This test only verifies the auth.signUp metadata + the immediate push;
+    // the form-redirect handoff is covered by tests/e2e/pro-onboarding-form.spec.ts.
     signUpMock.mockResolvedValueOnce({ data: { session: {} }, error: null });
     render(<SignupPage />);
 
