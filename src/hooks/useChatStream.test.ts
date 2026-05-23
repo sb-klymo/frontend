@@ -1902,3 +1902,61 @@ describe("auto-trigger on Realtime duffel_order_id (Plan B)", () => {
     vi.useRealTimers();
   });
 });
+
+// =============================================================================
+// useChatStream — 403 company_onboarding_required safety net
+// =============================================================================
+
+describe("useChatStream — company_onboarding_required redirect", () => {
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    useChatStore.getState().resetConversation();
+    vi.restoreAllMocks();
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
+    // Mutate `window.location` here (not inline in `it()`) so that if
+    // any assertion throws, `afterEach` still restores the original —
+    // otherwise a leaked stub bleeds into the ~1900 lines of tests that
+    // run after this block.
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { ...originalLocation, assign: vi.fn() },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: originalLocation,
+    });
+    vi.restoreAllMocks();
+  });
+
+  it("redirects to /onboarding/company-profile when backend returns 403 company_onboarding_required", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ code: "company_onboarding_required", message: "Complete onboarding first" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+
+    await act(async () => {
+      await result.current.send("hello");
+    });
+
+    expect(window.location.assign).toHaveBeenCalledWith("/onboarding/company-profile");
+  });
+});
