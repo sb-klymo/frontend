@@ -23,17 +23,22 @@ import { LogoutButton } from "./_components/LogoutButton";
  * `<ChatRoot>` client wrapper which handles the dev-panel-vs-chat
  * split and owns the single `useChatStream` instance.
  */
-async function fetchIsTeamFromBackend(accessToken: string): Promise<boolean> {
+type Me = {
+  is_team?: boolean;
+  account_type?: "company" | "individual";
+  organization_id?: string | null;
+};
+
+async function fetchMe(accessToken: string): Promise<Me> {
   /**
-   * Server-side `/me` fetch used to extract `is_team`. Failure-tolerant:
-   * any error (backend down, network blip, malformed payload) returns
-   * `false` so a non-team user never sees the dev panel by accident.
-   * Mirrors the BFF proxy at `/api/me/route.ts` but inline because we
-   * need the result during page render, not in an effect.
+   * Server-side `/me` fetch. Failure-tolerant: any error (backend down,
+   * network blip, malformed payload) returns `{}` so callers get safe
+   * defaults. Mirrors the BFF proxy at `/api/me/route.ts` but inline
+   * because we need the result during page render, not in an effect.
    */
   const backendUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!backendUrl) {
-    return false;
+    return {};
   }
   try {
     const res = await fetch(`${backendUrl}/me`, {
@@ -44,11 +49,10 @@ async function fetchIsTeamFromBackend(accessToken: string): Promise<boolean> {
       // change reflects the new state.
       cache: "no-store",
     });
-    if (!res.ok) return false;
-    const body = (await res.json()) as { is_team?: boolean };
-    return body.is_team === true;
+    if (!res.ok) return {};
+    return (await res.json()) as Me;
   } catch {
-    return false;
+    return {};
   }
 }
 
@@ -62,7 +66,16 @@ export default async function ChatPage() {
     redirect("/login");
   }
 
-  const isTeam = await fetchIsTeamFromBackend(session.access_token);
+  const me = await fetchMe(session.access_token);
+
+  // Phase 9: company users without an org must complete the onboarding form
+  // first. The backend's /api/chat also enforces this with HTTP 403 — this
+  // guard runs earlier (page render) so the user never sees a chat flash.
+  if (me.account_type === "company" && !me.organization_id) {
+    redirect("/onboarding/company-profile");
+  }
+
+  const isTeam = me.is_team === true;
 
   return (
     <main className="flex h-screen flex-col">
