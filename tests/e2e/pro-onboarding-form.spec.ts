@@ -106,19 +106,18 @@ test("Company signup lands on the form, not the chat", async ({ page }) => {
     page.getByRole("heading", { name: /Set up your company on Klymo/i }),
   ).toBeVisible();
 
-  // Fill minimal valid fields (labels match the <Field label="…"> props in
+  // Fill editable v2 fields (labels match the <Field label="…"> props in
   // CompanyProfileForm.tsx — each wraps its input in a <label> element).
+  // Locked fields (Plan, Billing mode, Transport allowed, Class allowed,
+  // International travel) are display-only and must NOT be interacted with.
   await page.getByLabel(/Company name/i).fill("E2E Acme");
-  await page.getByLabel(/Industry/i).selectOption("technology");
+  await page.getByLabel(/Country/i).fill("France");
   await page.getByLabel(/Team size/i).selectOption("11-50");
   await page.getByLabel(/Billing email/i).fill("bills@e2e.local");
   await page.getByLabel(/Primary office city/i).fill("Paris");
-  await page.getByLabel(/Timezone/i).fill("Europe/Paris");
   await page.getByLabel(/Workspace currency/i).selectOption("EUR");
   await page.getByLabel(/Cap per employee per flight/i).fill("50000");
-  await page.getByLabel(/Employee count/i).fill("25");
-  await page.getByLabel(/Monthly search token limit/i).fill("1000");
-  await page.getByLabel(/Search token price/i).fill("0.01");
+  // Approval mode stays at its default (self_serve) — no interaction needed.
 
   await page.getByRole("button", { name: /Create company/i }).click();
 

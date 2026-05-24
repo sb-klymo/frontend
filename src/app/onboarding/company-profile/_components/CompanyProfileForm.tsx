@@ -10,6 +10,10 @@
  * Conditional UX: the manager-threshold field only appears when
  * approval_mode='manager_approval'. The Zod schema enforces the
  * same rule server-side-style (threshold required and <= cap).
+ *
+ * Locked fields (Plan, Billing mode, Transport/Class allowed,
+ * International travel) are display-only — NOT registered with RHF
+ * and NOT included in the POST body.
  */
 
 import { useState } from "react";
@@ -17,16 +21,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { CompanyProfileSchema, type CompanyProfile } from "./CompanyProfileSchema";
-
-const INDUSTRIES = [
-  ["technology", "Technology"],
-  ["finance", "Finance"],
-  ["retail", "Retail"],
-  ["hospitality", "Hospitality"],
-  ["logistics", "Logistics"],
-  ["consulting", "Consulting"],
-  ["other", "Other"],
-] as const;
 
 const TEAM_SIZES = ["1-10", "11-50", "51-200", "200+"] as const;
 const CURRENCIES = ["EUR", "USD"] as const;
@@ -46,13 +40,9 @@ export function CompanyProfileForm() {
   } = useForm<CompanyProfile>({
     resolver: zodResolver(CompanyProfileSchema),
     defaultValues: {
-      website: null,
-      billing_address: null,
       currency: "EUR",
       approval_mode: "self_serve",
       manager_approval_threshold_cents: null,
-      search_token_currency: "USD",
-      block_search_when_limit_reached: false,
     },
   });
 
@@ -106,23 +96,8 @@ export function CompanyProfileForm() {
         <Field label="Company name" error={errors.name?.message}>
           <input {...register("name")} className={INPUT_CLASS} type="text" />
         </Field>
-        <Field label="Website" error={errors.website?.message}>
-          <input
-            {...register("website", { setValueAs: (v) => (v === "" ? null : v) })}
-            className={INPUT_CLASS}
-            type="url"
-            placeholder="https://acme.example"
-          />
-        </Field>
-        <Field label="Industry" error={errors.industry?.message}>
-          <select {...register("industry")} className={INPUT_CLASS}>
-            <option value="">Select…</option>
-            {INDUSTRIES.map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
+        <Field label="Country" error={errors.country?.message}>
+          <input {...register("country")} className={INPUT_CLASS} type="text" />
         </Field>
         <Field label="Team size" error={errors.team_size?.message}>
           <select {...register("team_size")} className={INPUT_CLASS}>
@@ -137,26 +112,11 @@ export function CompanyProfileForm() {
         <Field label="Billing email" error={errors.billing_email?.message}>
           <input {...register("billing_email")} className={INPUT_CLASS} type="email" />
         </Field>
-        <Field label="Billing address" error={errors.billing_address?.message}>
-          <textarea
-            {...register("billing_address", { setValueAs: (v) => (v === "" ? null : v) })}
-            className={INPUT_CLASS}
-            rows={2}
-          />
-        </Field>
       </Section>
 
       <Section title="Workspace">
         <Field label="Primary office city" error={errors.location?.message}>
           <input {...register("location")} className={INPUT_CLASS} type="text" />
-        </Field>
-        <Field label="Timezone" error={errors.timezone?.message}>
-          <input
-            {...register("timezone")}
-            className={INPUT_CLASS}
-            type="text"
-            placeholder="Europe/Paris"
-          />
         </Field>
         <Field label="Workspace currency" error={errors.currency?.message}>
           <select {...register("currency")} className={INPUT_CLASS}>
@@ -205,47 +165,11 @@ export function CompanyProfileForm() {
       </Section>
 
       <Section title="Plan">
-        <Field label="Employee count" error={errors.employee_count?.message}>
-          <input
-            {...register("employee_count", { valueAsNumber: true })}
-            className={INPUT_CLASS}
-            type="number"
-            min={0}
-          />
-        </Field>
-        <Field
-          label="Monthly search token limit"
-          error={errors.monthly_search_token_limit?.message}
-        >
-          <input
-            {...register("monthly_search_token_limit", { valueAsNumber: true })}
-            className={INPUT_CLASS}
-            type="number"
-            min={0}
-          />
-        </Field>
-        <Field label="Search token price" error={errors.search_token_price?.message}>
-          <input
-            {...register("search_token_price", { valueAsNumber: true })}
-            className={INPUT_CLASS}
-            type="number"
-            step="0.001"
-            min={0}
-          />
-        </Field>
-        <Field label="Search token currency" error={errors.search_token_currency?.message}>
-          <select {...register("search_token_currency")} className={INPUT_CLASS}>
-            {CURRENCIES.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input {...register("block_search_when_limit_reached")} type="checkbox" />
-          Block search when limit reached
-        </label>
+        <LockedField label="Plan" value="Company" />
+        <LockedField label="Billing mode" value="Company card" />
+        <LockedField label="Transport allowed" value="Flight only" />
+        <LockedField label="Class allowed" value="Economy only" />
+        <LockedField label="International travel" value="Yes" />
       </Section>
 
       {submitError && (
@@ -285,9 +209,25 @@ function Field({
 }) {
   return (
     <label className="block text-sm">
-      <span className="block mb-1 text-gray-700">{label}</span>
+      <span className="mb-1 block text-gray-700">{label}</span>
       {children}
       {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
+    </label>
+  );
+}
+
+function LockedField({ label, value }: { label: string; value: string }) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-gray-700">{label}</span>
+      <select
+        disabled
+        aria-label={label}
+        className={`${INPUT_CLASS} cursor-not-allowed bg-gray-100 text-gray-500`}
+      >
+        <option>{value}</option>
+      </select>
+      <span className="mt-1 block text-xs text-gray-400">Not modifiable in the MVP.</span>
     </label>
   );
 }

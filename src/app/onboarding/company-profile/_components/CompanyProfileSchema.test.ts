@@ -3,22 +3,14 @@ import { CompanyProfileSchema } from "./CompanyProfileSchema";
 
 const validBase = {
   name: "Acme",
-  website: null,
-  industry: "technology" as const,
   team_size: "11-50" as const,
   billing_email: "bills@acme.test",
-  billing_address: null,
   location: "Paris",
-  timezone: "Europe/Paris",
+  country: "France",
   currency: "EUR" as const,
   approval_mode: "self_serve" as const,
   policy_cap_amount_cents: 50000,
   manager_approval_threshold_cents: null,
-  employee_count: 25,
-  monthly_search_token_limit: 1000,
-  search_token_price: 0.01,
-  search_token_currency: "USD" as const,
-  block_search_when_limit_reached: false,
 };
 
 describe("CompanyProfileSchema", () => {
@@ -70,11 +62,8 @@ describe("CompanyProfileSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects invalid industry", () => {
-    const result = CompanyProfileSchema.safeParse({
-      ...validBase,
-      industry: "agriculture" as never,
-    });
+  it("rejects empty country", () => {
+    const result = CompanyProfileSchema.safeParse({ ...validBase, country: "" });
     expect(result.success).toBe(false);
   });
 });
