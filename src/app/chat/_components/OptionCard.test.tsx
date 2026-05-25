@@ -300,6 +300,57 @@ describe("OptionCard — Phase 10 duration + stops + layover", () => {
   });
 });
 
+describe("OptionCard — policy_blocked localized reason", () => {
+  const blockedOffer: DisplayedOffer = {
+    ...baseOffer,
+    policy_status: "policy_blocked",
+    policy_reason: "Amount 484.40 EUR exceeds the spend cap of 5.00 EUR",
+  };
+
+  it("shows the red blocked badge for policy_blocked in EN", () => {
+    render(<OptionCard offer={blockedOffer} language="en" />);
+    expect(screen.getByText(/✗ blocked/)).toBeInTheDocument();
+  });
+
+  it("shows the red blocked badge for policy_blocked in FR", () => {
+    render(<OptionCard offer={blockedOffer} language="fr" />);
+    expect(screen.getByText(/✗ bloqué/)).toBeInTheDocument();
+  });
+
+  it("renders a localized EN reason (NOT the raw engine string) for policy_blocked", () => {
+    render(<OptionCard offer={blockedOffer} language="en" />);
+    // Must show a localized phrase — not the raw backend engine string
+    expect(screen.queryByText("Amount 484.40 EUR exceeds the spend cap of 5.00 EUR")).toBeNull();
+    // Must show something about policy cap in English
+    const card = screen.getByText(/cap|policy/i);
+    expect(card).toBeInTheDocument();
+  });
+
+  it("renders a localized FR reason (NOT the raw engine string) for policy_blocked", () => {
+    render(<OptionCard offer={blockedOffer} language="fr" />);
+    // Must show a localized phrase — not the raw backend engine string
+    expect(screen.queryByText("Amount 484.40 EUR exceeds the spend cap of 5.00 EUR")).toBeNull();
+    // Must show something about plafond in French
+    const card = screen.getByText(/plafond/i);
+    expect(card).toBeInTheDocument();
+  });
+
+  it("amber manager-approval card still shows the raw policy_reason (unchanged behavior)", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          policy_status: "manager_approval_required",
+          policy_reason: "Amount exceeds threshold of €300.",
+        }}
+        language="en"
+      />,
+    );
+    // Amber cards continue to display the raw reason as before
+    expect(screen.getByText("Amount exceeds threshold of €300.")).toBeInTheDocument();
+  });
+});
+
 describe("OptionCard — Phase 10 French language", () => {
   it("renders FR singular '1 escale' and 'à MAD' layover preposition", () => {
     // Regression guard for B-FE1 (PR #49 review): SliceInfoRow previously

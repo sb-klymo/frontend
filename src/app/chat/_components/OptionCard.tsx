@@ -248,7 +248,11 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
           {statusLabel(offer.policy_status, language)}
         </span>
         {offer.policy_status !== "auto_approved" && (
-          <span className="text-xs text-gray-500">{offer.policy_reason}</span>
+          <span className="text-xs text-gray-500">
+            {offer.policy_status === "policy_blocked"
+              ? t.blockedReason
+              : offer.policy_reason}
+          </span>
         )}
       </div>
     </div>

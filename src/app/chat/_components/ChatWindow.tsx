@@ -250,6 +250,7 @@ export function ChatWindow({
                   language={language}
                   header={m.optionsHeader}
                   footer={m.optionsFooter}
+                  selectable={m.optionsSelectable}
                 />
               );
             }

@@ -200,6 +200,13 @@ export type ChatMessage = {
   optionsHeader?: string;
   optionsFooter?: string;
   /**
+   * When `false`, all offers in this message are policy-blocked and the list
+   * is read-only (no interactive booking footer). Populated from the backend
+   * `selectable` field on the `event: options` SSE frame. Defaults to `true`
+   * (happy path, backward compatible when the backend omits the field).
+   */
+  optionsSelectable?: boolean;
+  /**
    * Structured booking confirmation attached via the `event: booking`
    * SSE frame. When present, the renderer shows the
    * BookingConfirmationCard instead of the plain text bubble.
@@ -263,6 +270,8 @@ type ServerEvent =
       offers: DisplayedOffer[];
       header?: string;
       footer?: string;
+      /** When false, all offers are blocked and the list is read-only. Defaults to true when absent. */
+      selectable?: boolean;
       node?: string;
     }
   | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[]; total_duration_minutes?: number }
@@ -539,6 +548,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       offers: DisplayedOffer[],
       optionsHeader?: string,
       optionsFooter?: string,
+      optionsSelectable?: boolean,
     ) => {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -555,6 +565,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               offers,
               optionsHeader,
               optionsFooter,
+              optionsSelectable,
             },
           ];
         }
@@ -571,6 +582,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             offers,
             optionsHeader,
             optionsFooter,
+            optionsSelectable,
           },
         ];
       });
@@ -1233,6 +1245,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   event.offers,
                   event.header,
                   event.footer,
+                  event.selectable,
                 );
                 break;
               case "booking":
