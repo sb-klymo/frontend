@@ -110,6 +110,52 @@ describe("OptionList", () => {
 
 });
 
+// Helper: walks up the DOM tree to check if an element is inside a grey rounded bubble.
+function isInsideGreyBubble(el: HTMLElement | null): boolean {
+  let node: Element | null = el;
+  while (node) {
+    const cls = node.className?.toString() ?? "";
+    if (/\brounded(-\w+)?\b/.test(cls) && /\bbg-gray-\d+\b/.test(cls)) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+describe("OptionList — grey bubble wrapping (QA bug #3)", () => {
+  it("header sits inside a grey rounded bubble", () => {
+    render(<OptionList offers={[_offer()]} language="en" />);
+    expect(isInsideGreyBubble(screen.getByTestId("option-list-header"))).toBe(true);
+  });
+
+  it("i18n fallback footer sits inside a grey rounded bubble (selectable=true, no footer prop)", () => {
+    render(<OptionList offers={[_offer()]} language="en" />);
+    expect(isInsideGreyBubble(screen.getByTestId("option-list-footer"))).toBe(true);
+  });
+
+  it("backend-provided footer (selectable=true) sits inside a grey rounded bubble", () => {
+    render(
+      <OptionList
+        offers={[_offer()]}
+        language="en"
+        footer="Reply by number, by price, or by airline."
+      />,
+    );
+    expect(isInsideGreyBubble(screen.getByTestId("option-list-footer"))).toBe(true);
+  });
+
+  it("backend-provided footer (selectable=false) sits inside a grey rounded bubble", () => {
+    render(
+      <OptionList
+        offers={[_offer({ policy_status: "policy_blocked" })]}
+        language="en"
+        selectable={false}
+        footer="Adjust your criteria or contact your manager."
+      />,
+    );
+    expect(isInsideGreyBubble(screen.getByTestId("option-list-footer"))).toBe(true);
+  });
+});
+
 describe("OptionList — selectable=false (blocked offers read-only mode)", () => {
   function _blockedOffer(rank: number): DisplayedOffer {
     return _offer({
