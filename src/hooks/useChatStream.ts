@@ -200,15 +200,6 @@ export type ChatMessage = {
   optionsHeader?: string;
   optionsFooter?: string;
   /**
-   * One-line disclaimer rendered ABOVE the options header, populated by
-   * the backend when `state.trip_type_inferred` is True (extract_node
-   * defaulted trip_type to one_way because the LLM left it unresolved).
-   * Threaded as its own structured field — separate from the bubble
-   * text — so OptionList can render it as a distinct paragraph. Absent
-   * on the user-explicit path and on non-options turns.
-   */
-  optionsDisclaimer?: string;
-  /**
    * Structured booking confirmation attached via the `event: booking`
    * SSE frame. When present, the renderer shows the
    * BookingConfirmationCard instead of the plain text bubble.
@@ -272,7 +263,6 @@ type ServerEvent =
       offers: DisplayedOffer[];
       header?: string;
       footer?: string;
-      disclaimer?: string;
       node?: string;
     }
   | { type: "booking"; trip_id: string; booking_reference: string; passenger_name: string; amount_cents: number; currency: string; legs: BookingLeg[]; total_duration_minutes?: number }
@@ -549,7 +539,6 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       offers: DisplayedOffer[],
       optionsHeader?: string,
       optionsFooter?: string,
-      optionsDisclaimer?: string,
     ) => {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -558,9 +547,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
           // offers so the renderer can show OptionCards for it. Header /
           // footer come from the backend `phrase()` rephraser when an
           // API key is configured; absent when the rephraser fell back
-          // (i18n defaults take over in OptionList). Disclaimer is the
-          // one-way default opt-in (phase 10e), present only when
-          // extract_node coerced trip_type.
+          // (i18n defaults take over in OptionList).
           return [
             ...prev.slice(0, -1),
             {
@@ -568,7 +555,6 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               offers,
               optionsHeader,
               optionsFooter,
-              optionsDisclaimer,
             },
           ];
         }
@@ -585,7 +571,6 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             offers,
             optionsHeader,
             optionsFooter,
-            optionsDisclaimer,
           },
         ];
       });
@@ -1248,7 +1233,6 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   event.offers,
                   event.header,
                   event.footer,
-                  event.disclaimer,
                 );
                 break;
               case "booking":

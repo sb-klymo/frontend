@@ -108,26 +108,4 @@ describe("OptionList", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders the one-way disclaimer above the header when provided", () => {
-    render(
-      <OptionList
-        offers={[_offer()]}
-        header="3 options pour Lyon :"
-        disclaimer="Je suis parti sur un aller simple — dis-moi si tu veux ajouter un retour."
-      />,
-    );
-
-    expect(screen.getByTestId("option-list-disclaimer").textContent).toBe(
-      "Je suis parti sur un aller simple — dis-moi si tu veux ajouter un retour.",
-    );
-    // Header still renders alongside the disclaimer.
-    expect(screen.getByTestId("option-list-header").textContent).toBe(
-      "3 options pour Lyon :",
-    );
-  });
-
-  it("does not render the disclaimer paragraph when prop is absent", () => {
-    render(<OptionList offers={[_offer()]} header="Header" />);
-    expect(screen.queryByTestId("option-list-disclaimer")).toBeNull();
-  });
 });

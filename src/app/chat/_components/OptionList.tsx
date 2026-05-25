@@ -30,14 +30,6 @@ export type OptionListProps = {
   header?: string;
   /** Backend-rephrased footer text. Falls back to i18n when absent. */
   footer?: string;
-  /**
-   * One-way default opt-in (phase 10e). Rendered as a distinct paragraph
-   * ABOVE the header when `state.trip_type_inferred` is True on the
-   * backend (extract_node defaulted trip_type to one_way because the LLM
-   * left it unresolved). Absent on user-explicit trip-type paths and on
-   * non-options turns.
-   */
-  disclaimer?: string;
 };
 
 export function OptionList({
@@ -45,7 +37,6 @@ export function OptionList({
   language = "en",
   header,
   footer,
-  disclaimer,
 }: OptionListProps) {
   if (offers.length === 0) return null;
 
@@ -54,14 +45,6 @@ export function OptionList({
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[85%] space-y-2">
-        {disclaimer ? (
-          <p
-            className="text-sm text-gray-700"
-            data-testid="option-list-disclaimer"
-          >
-            {disclaimer}
-          </p>
-        ) : null}
         <p className="text-sm text-gray-700" data-testid="option-list-header">
           {header ?? t.header(offers.length)}
         </p>
