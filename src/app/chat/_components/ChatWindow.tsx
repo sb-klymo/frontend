@@ -250,7 +250,6 @@ export function ChatWindow({
                   language={language}
                   header={m.optionsHeader}
                   footer={m.optionsFooter}
-                  disclaimer={m.optionsDisclaimer}
                 />
               );
             }
