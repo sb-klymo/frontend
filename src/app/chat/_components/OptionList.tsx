@@ -53,9 +53,11 @@ export function OptionList({
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[85%] space-y-2">
-        <p className="text-sm text-gray-700" data-testid="option-list-header">
-          {header ?? t.header(offers.length)}
-        </p>
+        <TextBubble>
+          <p className="text-sm" data-testid="option-list-header">
+            {header ?? t.header(offers.length)}
+          </p>
+        </TextBubble>
         <div className="space-y-2">
           {offers.map((offer) => (
             <OptionCard key={offer.offer_id} offer={offer} language={language} />
@@ -65,22 +67,43 @@ export function OptionList({
           // Read-only mode: show backend adjust-criteria hint (always present
           // when selectable=false), never the interactive booking footer.
           footer ? (
-            <p className="text-xs text-gray-500" data-testid="option-list-footer">
-              {footer}
-            </p>
+            <TextBubble>
+              <p className="text-xs" data-testid="option-list-footer">
+                {footer}
+              </p>
+            </TextBubble>
           ) : null
         ) : footer ? (
-          <p className="text-xs text-gray-500" data-testid="option-list-footer">
-            {footer}
-          </p>
+          <TextBubble>
+            <p className="text-xs" data-testid="option-list-footer">
+              {footer}
+            </p>
+          </TextBubble>
         ) : (
-          <p className="text-xs text-gray-500" data-testid="option-list-footer">
-            {t.footerLeading}{" "}
-            <span className="font-mono">&ldquo;{t.footerExampleRank}&rdquo;</span>,{" "}
-            <span className="font-mono">&ldquo;{t.footerExampleCheapest}&rdquo;</span>,{" "}
-            {t.footerByAirline}
-          </p>
+          <TextBubble>
+            <p className="text-xs" data-testid="option-list-footer">
+              {t.footerLeading}{" "}
+              <span className="font-mono">&ldquo;{t.footerExampleRank}&rdquo;</span>,{" "}
+              <span className="font-mono">&ldquo;{t.footerExampleCheapest}&rdquo;</span>,{" "}
+              {t.footerByAirline}
+            </p>
+          </TextBubble>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Wraps option-list header/footer text in the same grey rounded bubble as
+ * ChatWindow's assistant `Bubble`, so they read like other bot messages
+ * (QA report 2026-05-25, bug #3). Left-aligned, hugs its content.
+ */
+function TextBubble({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[85%] rounded-2xl bg-gray-100 px-4 py-2 text-gray-900">
+        {children}
       </div>
     </div>
   );
