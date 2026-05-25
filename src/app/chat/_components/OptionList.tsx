@@ -30,6 +30,13 @@ export type OptionListProps = {
   header?: string;
   /** Backend-rephrased footer text. Falls back to i18n when absent. */
   footer?: string;
+  /**
+   * When `false`, all offers are blocked by policy and the list is read-only:
+   * the interactive "reply option N" booking footer is suppressed, and the
+   * backend-provided `footer` (adjust-criteria hint) is always shown.
+   * Defaults to `true` (happy path, backward compatible when omitted).
+   */
+  selectable?: boolean;
 };
 
 export function OptionList({
@@ -37,6 +44,7 @@ export function OptionList({
   language = "en",
   header,
   footer,
+  selectable = true,
 }: OptionListProps) {
   if (offers.length === 0) return null;
 
@@ -53,7 +61,15 @@ export function OptionList({
             <OptionCard key={offer.offer_id} offer={offer} language={language} />
           ))}
         </div>
-        {footer ? (
+        {!selectable ? (
+          // Read-only mode: show backend adjust-criteria hint (always present
+          // when selectable=false), never the interactive booking footer.
+          footer ? (
+            <p className="text-xs text-gray-500" data-testid="option-list-footer">
+              {footer}
+            </p>
+          ) : null
+        ) : footer ? (
           <p className="text-xs text-gray-500" data-testid="option-list-footer">
             {footer}
           </p>

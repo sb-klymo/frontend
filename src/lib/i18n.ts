@@ -55,6 +55,8 @@ type Strings = {
     badgeManagerApproval: string;
     badgeFinanceApproval: string;
     badgeBlocked: string;
+    /** Localized reason shown on policy_blocked cards instead of the raw engine string. */
+    blockedReason: string;
     // Twelve short month names used for the per-slice date line, e.g.
     // FR: "21 mai", EN: "May 21". Order: January (index 0) … December (11).
     monthNamesShort: readonly [
@@ -185,6 +187,7 @@ const EN: Strings = {
     badgeManagerApproval: "⚠ requires manager approval",
     badgeFinanceApproval: "⚠ requires finance approval",
     badgeBlocked: "✗ blocked",
+    blockedReason: "Over your travel-policy cap",
     monthNamesShort: [
       "Jan", "Feb", "Mar", "Apr", "May", "Jun",
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -308,6 +311,7 @@ const FR: Strings = {
     badgeManagerApproval: "⚠ approbation manager requise",
     badgeFinanceApproval: "⚠ approbation finance requise",
     badgeBlocked: "✗ bloqué",
+    blockedReason: "Dépasse votre plafond de voyage",
     monthNamesShort: [
       "janv.", "févr.", "mars", "avr.", "mai", "juin",
       "juil.", "août", "sept.", "oct.", "nov.", "déc.",

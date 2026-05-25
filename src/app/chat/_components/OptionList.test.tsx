@@ -109,3 +109,83 @@ describe("OptionList", () => {
   });
 
 });
+
+describe("OptionList — selectable=false (blocked offers read-only mode)", () => {
+  function _blockedOffer(rank: number): DisplayedOffer {
+    return _offer({
+      offer_id: `off_blocked_${rank}`,
+      rank,
+      policy_status: "policy_blocked",
+      policy_reason: "Amount 484.40 EUR exceeds the spend cap of 5.00 EUR",
+    });
+  }
+
+  const blockedOffers = [_blockedOffer(1), _blockedOffer(2), _blockedOffer(3)];
+
+  it("renders all 3 blocked offer cards when selectable=false", () => {
+    render(
+      <OptionList
+        offers={blockedOffers}
+        language="fr"
+        selectable={false}
+        footer="Ajustez vos critères ou contactez votre responsable."
+      />,
+    );
+    // All 3 cards should render — user sees the options even if blocked
+    expect(screen.getAllByText(/Option/).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does NOT render the booking footer when selectable=false", () => {
+    render(
+      <OptionList
+        offers={blockedOffers}
+        language="fr"
+        selectable={false}
+        footer="Ajustez vos critères."
+      />,
+    );
+    // The "répondez option 1" interactive hint must not appear
+    const footer = screen.getByTestId("option-list-footer").textContent ?? "";
+    expect(footer).not.toContain("option 1");
+    expect(footer).not.toContain("Répondez");
+    expect(footer).not.toContain("répondez");
+  });
+
+  it("shows the backend-provided footer (adjust-criteria hint) when selectable=false", () => {
+    const adjustHint = "Ajustez vos critères ou contactez votre responsable.";
+    render(
+      <OptionList
+        offers={blockedOffers}
+        language="fr"
+        selectable={false}
+        footer={adjustHint}
+      />,
+    );
+    expect(screen.getByTestId("option-list-footer").textContent).toBe(adjustHint);
+  });
+
+  it("renders booking footer when selectable is omitted (backward compat default)", () => {
+    // Happy path: selectable omitted → defaults to true → interactive footer shown
+    render(
+      <OptionList
+        offers={[_offer()]}
+        language="fr"
+      />,
+    );
+    const footer = screen.getByTestId("option-list-footer").textContent ?? "";
+    // The i18n default footer contains the "option 1" example token
+    expect(footer).toContain("option 1");
+  });
+
+  it("renders booking footer when selectable=true (explicit, backward compat)", () => {
+    render(
+      <OptionList
+        offers={[_offer()]}
+        language="en"
+        selectable={true}
+      />,
+    );
+    const footer = screen.getByTestId("option-list-footer").textContent ?? "";
+    expect(footer).toContain("option 1");
+  });
+});
