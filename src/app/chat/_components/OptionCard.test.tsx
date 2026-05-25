@@ -61,7 +61,7 @@ describe("OptionCard", () => {
     expect(screen.getByText(/✓ approved/)).toBeInTheDocument();
   });
 
-  it("shows the manager-approval badge + policy reason when needs approval", () => {
+  it("shows the manager-approval badge + localized reason (not raw engine string)", () => {
     render(
       <OptionCard
         offer={{
@@ -74,9 +74,11 @@ describe("OptionCard", () => {
     expect(
       screen.getByText(/⚠ requires manager approval/),
     ).toBeInTheDocument();
+    // Raw engine string must NOT appear — localized reason replaces it
     expect(
-      screen.getByText("Amount exceeds threshold of €300."),
-    ).toBeInTheDocument();
+      screen.queryByText("Amount exceeds threshold of €300."),
+    ).toBeNull();
+    expect(screen.getByText(/threshold/i)).toBeInTheDocument();
   });
 
   it("renders the return leg when present (round-trip)", () => {
@@ -335,7 +337,7 @@ describe("OptionCard — policy_blocked localized reason", () => {
     expect(card).toBeInTheDocument();
   });
 
-  it("amber manager-approval card still shows the raw policy_reason (unchanged behavior)", () => {
+  it("amber manager-approval card shows a localized reason, NOT the raw policy_reason", () => {
     render(
       <OptionCard
         offer={{
@@ -346,8 +348,122 @@ describe("OptionCard — policy_blocked localized reason", () => {
         language="en"
       />,
     );
-    // Amber cards continue to display the raw reason as before
-    expect(screen.getByText("Amount exceeds threshold of €300.")).toBeInTheDocument();
+    // Raw engine string must NOT appear — amber cards now show localized reason
+    expect(screen.queryByText("Amount exceeds threshold of €300.")).toBeNull();
+    // Localized phrase appears instead
+    expect(screen.getByText(/threshold/i)).toBeInTheDocument();
+  });
+});
+
+describe("OptionCard — localized manager/finance-approval reason (issue #3)", () => {
+  const rawEngineString =
+    "Amount 201.13 EUR requires manager approval (threshold: 200.00 EUR).";
+
+  it("EN manager_approval_required: shows localized reason, NOT the raw engine string", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          policy_status: "manager_approval_required",
+          policy_reason: rawEngineString,
+        }}
+        language="en"
+      />,
+    );
+    // Raw engine string must not appear
+    expect(screen.queryByText(rawEngineString)).toBeNull();
+    // Localized reason phrase (gray span, distinct from badge) must appear.
+    // "Manager approval required (above threshold)" — matches "above threshold"
+    // which only lives in the reason span, not the badge.
+    expect(screen.getByText(/above threshold/i)).toBeInTheDocument();
+  });
+
+  it("FR manager_approval_required: shows localized reason, NOT the raw engine string", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          policy_status: "manager_approval_required",
+          policy_reason: rawEngineString,
+        }}
+        language="fr"
+      />,
+    );
+    // Raw engine string must not appear
+    expect(screen.queryByText(rawEngineString)).toBeNull();
+    // "Approbation manager requise (au-dessus du seuil)" — "au-dessus du seuil"
+    // only lives in the reason span, not the badge.
+    expect(screen.getByText(/au-dessus du seuil/i)).toBeInTheDocument();
+  });
+
+  it("EN finance_approval_required: shows localized reason, NOT the raw engine string", () => {
+    const financeRaw =
+      "Amount 1501.00 EUR requires finance approval (threshold: 1500.00 EUR).";
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          policy_status: "finance_approval_required",
+          policy_reason: financeRaw,
+        }}
+        language="en"
+      />,
+    );
+    // Raw engine string must not appear
+    expect(screen.queryByText(financeRaw)).toBeNull();
+    // "Finance approval required (above threshold)"
+    expect(screen.getByText(/Finance approval required/i)).toBeInTheDocument();
+    expect(screen.getByText(/above threshold/i)).toBeInTheDocument();
+  });
+
+  it("FR finance_approval_required: shows localized reason, NOT the raw engine string", () => {
+    const financeRaw =
+      "Amount 1501.00 EUR requires finance approval (threshold: 1500.00 EUR).";
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          policy_status: "finance_approval_required",
+          policy_reason: financeRaw,
+        }}
+        language="fr"
+      />,
+    );
+    // Raw engine string must not appear
+    expect(screen.queryByText(financeRaw)).toBeNull();
+    // "Approbation finance requise (au-dessus du seuil)" — "au-dessus du seuil"
+    // uniquely identifies the reason span (the badge text does not contain it).
+    expect(screen.getByText(/au-dessus du seuil/i)).toBeInTheDocument();
+  });
+
+  it("auto_approved card shows no reason text at all", () => {
+    render(<OptionCard offer={baseOffer} language="en" />);
+    // No reason span rendered for auto_approved
+    expect(screen.queryByText(/above threshold/i)).toBeNull();
+    expect(screen.queryByText(/au-dessus du seuil/i)).toBeNull();
+    expect(screen.queryByText(/travel-policy cap/i)).toBeNull();
+  });
+
+  it("policy_blocked still shows blockedReason (regression)", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          policy_status: "policy_blocked",
+          policy_reason:
+            "Amount 484.40 EUR exceeds the spend cap of 5.00 EUR",
+        }}
+        language="en"
+      />,
+    );
+    // Raw engine string must NOT appear
+    expect(
+      screen.queryByText(
+        "Amount 484.40 EUR exceeds the spend cap of 5.00 EUR",
+      ),
+    ).toBeNull();
+    // blockedReason localized string: "Over your travel-policy cap"
+    expect(screen.getByText(/travel-policy cap/i)).toBeInTheDocument();
   });
 });
 
