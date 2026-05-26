@@ -64,6 +64,24 @@ const CURRENCY_SYMBOL: Record<string, string> = {
   GBP: "£",
 };
 
+// Normalize a badge from the (unvalidated) SSE payload into a safe one:
+// the `ConditionBadge` type is a compile-time-only contract, so guard
+// against an absent field, an unrecognized `state`, or a contradictory
+// "fee" with no positive penalty — all collapse to "unknown".
+function safeRefundBadge(badge: ConditionBadge | undefined): ConditionBadge {
+  if (!badge) return UNKNOWN_BADGE;
+  switch (badge.state) {
+    case "free":
+    case "not_allowed":
+    case "unknown":
+      return badge;
+    case "fee":
+      return (badge.penalty_amount_cents ?? 0) > 0 ? badge : UNKNOWN_BADGE;
+    default:
+      return UNKNOWN_BADGE;
+  }
+}
+
 function refundBadgeLabel(
   badge: ConditionBadge,
   language: SupportedLanguage,
@@ -79,6 +97,8 @@ function refundBadgeLabel(
         formatPrice(badge.penalty_amount_cents ?? 0, badge.penalty_currency ?? "EUR"),
       );
     case "unknown":
+      return t.conditionUnknown;
+    default:
       return t.conditionUnknown;
   }
 }
@@ -248,6 +268,7 @@ export type OptionCardProps = {
 
 export function OptionCard({ offer, language = "en" }: OptionCardProps) {
   const t = strings(language).optionCard;
+  const refundBadge = safeRefundBadge(offer.refund_policy);
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -299,11 +320,11 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
         )}
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            CONDITION_PILL_CLASS[(offer.refund_policy ?? UNKNOWN_BADGE).state]
+            CONDITION_PILL_CLASS[refundBadge.state]
           }`}
           data-testid="refund-badge"
         >
-          {refundBadgeLabel(offer.refund_policy ?? UNKNOWN_BADGE, language)}
+          {refundBadgeLabel(refundBadge, language)}
         </span>
       </div>
     </div>

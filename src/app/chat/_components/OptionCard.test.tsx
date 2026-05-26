@@ -611,4 +611,26 @@ describe("OptionCard refund badge (Phase 12)", () => {
       "Conditions to confirm",
     );
   });
+
+  it("coerces a contradictory 'fee' with no positive penalty to unknown", () => {
+    // Defensive against unvalidated SSE data: a 'fee' badge with a null/0
+    // penalty must NOT render "Cancellation fee €0".
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          refund_policy: {
+            state: "fee",
+            penalty_amount_cents: null,
+            penalty_currency: null,
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByTestId("refund-badge")).toHaveTextContent(
+      "Conditions to confirm",
+    );
+    expect(screen.queryByText(/Cancellation fee/)).toBeNull();
+  });
 });
