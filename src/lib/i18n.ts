@@ -74,6 +74,11 @@ type Strings = {
     layoverIn: (duration: string, airport: string) => string;
     legLabelOutbound: string;
     legLabelReturn: string;
+    // Phase 12 — refund/change condition badge labels.
+    refundFree: string;
+    refundNonRefundable: string;
+    conditionUnknown: string;
+    refundFee: (amount: string) => string;
   };
   bookingCard: {
     title: string;
@@ -204,6 +209,10 @@ const EN: Strings = {
       ` · ${duration} in ${airport}`,
     legLabelOutbound: "Outbound",
     legLabelReturn: "Return",
+    refundFree: "Free cancellation",
+    refundNonRefundable: "Non-refundable",
+    conditionUnknown: "Conditions to confirm",
+    refundFee: (amount: string) => `Cancellation fee ${amount}`,
   },
   bookingCard: {
     title: "Booking confirmed",
@@ -330,6 +339,10 @@ const FR: Strings = {
       ` · ${duration} à ${airport}`,
     legLabelOutbound: "Aller",
     legLabelReturn: "Retour",
+    refundFree: "Annulation gratuite",
+    refundNonRefundable: "Non remboursable",
+    conditionUnknown: "Conditions à confirmer",
+    refundFee: (amount: string) => `Annulation : ${amount} de frais`,
   },
   bookingCard: {
     title: "Réservation confirmée",

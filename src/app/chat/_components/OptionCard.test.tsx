@@ -551,3 +551,86 @@ describe("OptionCard — Phase 10 French language", () => {
     expect(screen.queryByText("Return")).toBeNull();
   });
 });
+
+describe("OptionCard refund badge (Phase 12)", () => {
+  it("shows free cancellation (en)", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          refund_policy: {
+            state: "free",
+            penalty_amount_cents: null,
+            penalty_currency: null,
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByText("Free cancellation")).toBeInTheDocument();
+  });
+
+  it("shows the fee badge with the penalty amount (fr)", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          refund_policy: {
+            state: "fee",
+            penalty_amount_cents: 8_000,
+            penalty_currency: "EUR",
+          },
+        }}
+        language="fr"
+      />,
+    );
+    expect(screen.getByText("Annulation : €80 de frais")).toBeInTheDocument();
+  });
+
+  it("shows non-refundable (en)", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          refund_policy: {
+            state: "not_allowed",
+            penalty_amount_cents: null,
+            penalty_currency: null,
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByText("Non-refundable")).toBeInTheDocument();
+  });
+
+  it("falls back to 'conditions to confirm' when refund_policy is absent", () => {
+    // A frontend deploy briefly ahead of the backend: no refund_policy field.
+    render(<OptionCard offer={baseOffer} language="en" />);
+    expect(screen.getByTestId("refund-badge")).toHaveTextContent(
+      "Conditions to confirm",
+    );
+  });
+
+  it("coerces a contradictory 'fee' with no positive penalty to unknown", () => {
+    // Defensive against unvalidated SSE data: a 'fee' badge with a null/0
+    // penalty must NOT render "Cancellation fee €0".
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          refund_policy: {
+            state: "fee",
+            penalty_amount_cents: null,
+            penalty_currency: null,
+          },
+        }}
+        language="en"
+      />,
+    );
+    expect(screen.getByTestId("refund-badge")).toHaveTextContent(
+      "Conditions to confirm",
+    );
+    expect(screen.queryByText(/Cancellation fee/)).toBeNull();
+  });
+});
