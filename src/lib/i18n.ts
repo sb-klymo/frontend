@@ -178,6 +178,8 @@ type Strings = {
     /** Canceled/withdrawn state */
     canceledHeading: string;
     canceledTitle: string;
+    /** Notice shown by the chat input while a booking awaits approval */
+    inputBlockedNotice: string;
   };
 };
 
@@ -302,6 +304,8 @@ const EN: Strings = {
     expiredHint: "This request expired. Want to try a different option?",
     canceledHeading: "Canceled",
     canceledTitle: "Request withdrawn.",
+    inputBlockedNotice:
+      "Waiting for your manager's approval — you'll be notified as soon as they respond.",
   },
   typingIndicator: {
     thinking: "Thinking…",
@@ -432,6 +436,8 @@ const FR: Strings = {
     expiredHint: "Cette demande a expiré. Voulez-vous essayer une autre option ?",
     canceledHeading: "Annulée",
     canceledTitle: "Demande retirée.",
+    inputBlockedNotice:
+      "En attente de l'approbation de votre manager — vous serez notifié dès sa réponse.",
   },
   typingIndicator: {
     thinking: "Réflexion en cours…",
