@@ -81,7 +81,9 @@ test.skip("auto-charge: bag catalogue auto-appears after booking confirmation wi
   // 1. Send an unambiguous trip request.
   //    Marseille and Toulouse are single-airport cities — no disambiguation
   //    step, so the agent goes straight to the option list.
-  await input.fill("Vol Marseille → Toulouse demain, juste 1 passager, classe éco");
+  await input.fill(
+    "Vol Marseille → Toulouse demain, aller simple, juste 1 passager, classe éco",
+  );
   await input.press("Enter");
 
   // 2. Wait for option list (stub Duffel returns 3 deterministic options).
@@ -183,7 +185,9 @@ test("plan-b: extras prompt and CheckoutPaymentCard render; resume trigger fires
   const { input } = await signupAndOnboard(page, { prefix: "resume-planb" });
 
   // 1. Same unambiguous trip request as Test 1.
-  await input.fill("Vol Marseille → Toulouse demain, juste 1 passager, classe éco");
+  await input.fill(
+    "Vol Marseille → Toulouse demain, aller simple, juste 1 passager, classe éco",
+  );
   await input.press("Enter");
 
   // 2. Option list arrives.

@@ -1,37 +1,38 @@
 /**
  * Round-trip flow — bundle model (Phase 11).
  *
- * Phase-11 product change (backend commit 71ec78b): the old two-stage
- * selection model (pick outbound → second list for return) has been
- * retired. A round-trip search now surfaces option cards where EACH
- * card already bundles BOTH legs (outbound + return). Picking "option 1"
- * resolves the entire booking in a single step and advances directly to
- * the extras prompt — there is no intermediate `awaiting_return_selection`
- * stage and no second option list.
+ * Phase-11 product change (backend PR #105): the old two-stage selection
+ * model (pick outbound → second list for return) has been retired. A
+ * round-trip search now surfaces option cards where EACH card already
+ * bundles BOTH legs (outbound + return). Picking "option 1" resolves the
+ * entire selection in a single step and advances directly to the extras
+ * prompt — there is no intermediate `awaiting_return_selection` stage and
+ * no second option list.
  *
  * What this test pins:
- *   1. Option cards arrive after the round-trip search prompt.
+ *   1. Option cards arrive after the round-trip search prompt, and exactly
+ *      ONE option list is ever rendered (no second "pick your return" list).
  *   2. Each bundle card shows BOTH the outbound ("Aller") and the return
  *      ("Retour") leg — rendered by OptionCard when `return_leg` is
- *      populated.
- *   3. After the user picks "option 1", the bot advances to the EXTRAS
- *      prompt (bags / seats vocabulary), NOT a second option list.
- *      Specifically: `option-list-header` count stays at 1 — only one
- *      option list was ever rendered.
- *   4. After declining extras ("non"), the booking confirmation card
- *      shows EXACTLY 2 legs (`booking-leg-row` count = 2) — one outbound
- *      and one return.
+ *      populated. This is the "two legs" coverage: both slices are on the
+ *      single card the user picks.
+ *   3. After the user picks "option 1", the bot advances straight to the
+ *      EXTRAS prompt (bags / seats vocabulary), NOT a second option list —
+ *      `option-list-header` count stays at 1.
+ *   4. After declining extras, the single pick resolves to the payment
+ *      step (CheckoutPaymentCard) — proving the whole round trip booked
+ *      from one selection.
  *
- * Why we don't drive through checkout: same rationale as
- * select-strategies.spec.ts — extras → checkout is already covered by
- * extras-apply.spec.ts and plan-b-checkout.spec.ts. The goal here is to
- * pin that the bundle model routing produces the right number of option
- * lists and the right number of booking legs.
+ * Why we stop at the CheckoutPaymentCard rather than a completed
+ * BookingConfirmationCard: completing an auto-charge booking requires a
+ * real Stripe test PaymentMethod, which this local env does not have (the
+ * backend talks to real Stripe test mode). A checkout_fallback user only
+ * needs Stripe to MINT a Checkout-session URL — which works deterministically
+ * (same path as plan-b-checkout.spec.ts). The bundle model is fully pinned
+ * by the single-option-list + both-legs-on-card + single-pick→payment
+ * assertions above.
  *
- * Stale-backend caveat: the local :8000 backend on `main` still uses the
- * old two-stage model. Running this spec locally against the un-merged
- * backend will fail. The spec is written for post-deploy (branch
- * `phase-11/round-trip-polish`, backend commit 71ec78b).
+ * Requires the bundle-model backend (merged to main 2026-05-26, PR #105).
  */
 
 import { expect, test } from "@playwright/test";
@@ -41,9 +42,12 @@ import { signupAndOnboard } from "./_fixtures/userSetup";
 test.describe("Round-trip flow — bundle model (single-pick, both legs)", () => {
   test.setTimeout(180_000);
 
-  test("round-trip pick resolves in one step → extras prompt, no second option list, booking has 2 legs", async ({
+  test("round-trip pick resolves in one step → extras prompt, no second option list, single pick → payment", async ({
     page,
   }) => {
+    // checkout_fallback (no saved card) → declining extras routes to the
+    // Stripe Checkout link path, which only needs Stripe to mint a session
+    // URL (no real saved PaymentMethod required). See userSetup.ts.
     const { input } = await signupAndOnboard(page, { prefix: "rtbundle" });
 
     // Round-trip prompt: explicit return date triggers the round-trip
@@ -67,16 +71,10 @@ test.describe("Round-trip flow — bundle model (single-pick, both legs)", () =>
     // --- 2. Bundle cards show both legs ---
     // OptionCard renders an "Aller · <date>" label row when return_leg is
     // present (i18n key `legLabelOutbound` = "Aller" in FR) and a
-    // "Retour · <date>" row for the return slice. Assert at least the
-    // outbound label is visible on the first card.
-    await expect(
-      page.getByText(/^Aller\b/i).first(),
-    ).toBeVisible();
-
-    // Assert the return label is also visible (proves both legs rendered).
-    await expect(
-      page.getByText(/^Retour\b/i).first(),
-    ).toBeVisible();
+    // "Retour · <date>" row for the return slice. Both labels visible
+    // proves the single card bundles both legs.
+    await expect(page.getByText(/^Aller\b/i).first()).toBeVisible();
+    await expect(page.getByText(/^Retour\b/i).first()).toBeVisible();
 
     // --- 3. Pick option 1 → extras prompt, NOT a second option list ---
     await input.fill("option 1");
@@ -93,19 +91,17 @@ test.describe("Round-trip flow — bundle model (single-pick, both legs)", () =>
     ).toBeVisible({ timeout: 60_000 });
 
     // The option-list-header count must STILL be 1 — no second option list
-    // was emitted for a "return selection" stage.
+    // was emitted for a "return selection" stage. This is the core
+    // bundle-model assertion.
     await expect(page.getByTestId("option-list-header")).toHaveCount(1);
 
-    // --- 4. Decline extras → booking confirmation with 2 legs ---
+    // --- 4. Decline extras → single pick resolves to the payment step ---
     await input.fill("non");
     await input.press("Enter");
 
-    // Wait for the booking confirmation card.
+    // The whole round trip resolved from one selection → CheckoutPaymentCard.
     await expect(
-      page.getByTestId("booking-confirmation-card"),
+      page.getByTestId("checkout-payment-card"),
     ).toBeVisible({ timeout: 60_000 });
-
-    // A round-trip booking has exactly 2 legs (outbound + return).
-    await expect(page.getByTestId("booking-leg-row")).toHaveCount(2);
   });
 });

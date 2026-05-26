@@ -38,7 +38,9 @@ test.describe("Phase 10 R1+R2 — OptionCard duration + stops badge", () => {
   }) => {
     const { input } = await signupAndOnboard(page, { prefix: "p10-direct" });
 
-    await input.fill("Vol Marseille → Toulouse demain, 1 passager, classe éco");
+    await input.fill(
+      "Vol Marseille → Toulouse demain, aller simple, 1 passager, classe éco",
+    );
     await input.press("Enter");
 
     // Wait for the chat option list (NOT the sidebar dev-panel buttons).
@@ -74,7 +76,7 @@ test.describe("Phase 10 R1+R2 — OptionCard duration + stops badge", () => {
      */
     const { input } = await signupAndOnboard(page, { prefix: "p10-noregress" });
 
-    await input.fill("Vol Marseille → Toulouse demain, 1 passager");
+    await input.fill("Vol Marseille → Toulouse demain, aller simple, 1 passager");
     await input.press("Enter");
 
     await expect(page.getByTestId("option-list-header")).toBeVisible({

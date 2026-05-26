@@ -112,7 +112,7 @@ test.describe("Name greeting — first utterance per node (PR #83)", () => {
     await signupAsHarold(page, "search-present");
     await sendAndAssertHarold(
       page,
-      "j'habite à Marseille et je veux aller à Toulouse demain",
+      "j'habite à Marseille et je veux aller à Toulouse demain, aller simple",
     );
   });
 
