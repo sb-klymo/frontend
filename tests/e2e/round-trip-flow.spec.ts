@@ -1,89 +1,111 @@
 /**
- * Round-trip flow — two-stage selection coverage.
+ * Round-trip flow — bundle model (Phase 11).
  *
- * The graph treats round-trip differently from one-way: after the
- * user picks an outbound option, `select_node` filters the pool to
- * return offers bundled with that outbound, then either auto-resolves
- * (single matching return) or advances to `awaiting_return_selection`
- * for a second user pick. One-way bookings short-circuit this two-stage
- * dance and go straight to extras → checkout.
+ * Phase-11 product change (backend commit 71ec78b): the old two-stage
+ * selection model (pick outbound → second list for return) has been
+ * retired. A round-trip search now surfaces option cards where EACH
+ * card already bundles BOTH legs (outbound + return). Picking "option 1"
+ * resolves the entire booking in a single step and advances directly to
+ * the extras prompt — there is no intermediate `awaiting_return_selection`
+ * stage and no second option list.
  *
- * This test pins the basic happy path: user asks for a round-trip,
- * gets options, picks the first outbound, then either:
- *   (a) the bot presents return options (assert SECOND option list
- *       arrives — `awaiting_return_selection`), OR
- *   (b) the bot auto-resolves the single bundled return and jumps to
- *       the extras prompt (assert extras prompt arrives — bypass).
+ * What this test pins:
+ *   1. Option cards arrive after the round-trip search prompt.
+ *   2. Each bundle card shows BOTH the outbound ("Aller") and the return
+ *      ("Retour") leg — rendered by OptionCard when `return_leg` is
+ *      populated.
+ *   3. After the user picks "option 1", the bot advances to the EXTRAS
+ *      prompt (bags / seats vocabulary), NOT a second option list.
+ *      Specifically: `option-list-header` count stays at 1 — only one
+ *      option list was ever rendered.
+ *   4. After declining extras ("non"), the booking confirmation card
+ *      shows EXACTLY 2 legs (`booking-leg-row` count = 2) — one outbound
+ *      and one return.
  *
- * Pattern (a) is more common with realistic round-trip inventory;
- * pattern (b) fires only when the stub returns a single bundled
- * return per outbound. We accept either via a regex that matches
- * both the "here are N options" header and the extras prompt.
+ * Why we don't drive through checkout: same rationale as
+ * select-strategies.spec.ts — extras → checkout is already covered by
+ * extras-apply.spec.ts and plan-b-checkout.spec.ts. The goal here is to
+ * pin that the bundle model routing produces the right number of option
+ * lists and the right number of booking legs.
  *
- * Why we don't drive through to checkout: same rationale as
- * select-strategies.spec.ts — the goal here is to pin that the
- * round-trip routing reaches the next user-decision point without
- * the graph stalling or returning `_NO_MATCH_HINT`. Coverage of
- * extras → checkout already lives in extras-apply.spec.ts and
- * plan-b-checkout.spec.ts.
+ * Stale-backend caveat: the local :8000 backend on `main` still uses the
+ * old two-stage model. Running this spec locally against the un-merged
+ * backend will fail. The spec is written for post-deploy (branch
+ * `phase-11/round-trip-polish`, backend commit 71ec78b).
  */
 
 import { expect, test } from "@playwright/test";
 
-test.describe("Round-trip flow — two-stage selection", () => {
+import { signupAndOnboard } from "./_fixtures/userSetup";
+
+test.describe("Round-trip flow — bundle model (single-pick, both legs)", () => {
   test.setTimeout(180_000);
 
-  test("user picks an outbound on a round-trip search", async ({ page }) => {
-    const email = `e2e-roundtrip-${Date.now()}@klymo.local`;
-    await page.goto("/signup");
-    await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password").fill("password123456");
-    await page.getByRole("button", { name: /create account/i }).click();
-    await expect(page).toHaveURL(/\/chat$/);
+  test("round-trip pick resolves in one step → extras prompt, no second option list, booking has 2 legs", async ({
+    page,
+  }) => {
+    const { input } = await signupAndOnboard(page, { prefix: "rtbundle" });
 
     // Round-trip prompt: explicit return date triggers the round-trip
-    // search branch. Marseille ↔ Toulouse keeps the cities
-    // unambiguous so we don't tangle with disambiguate_node.
-    const input = page.getByPlaceholder(/ask about a trip/i);
+    // search branch. Marseille ↔ Toulouse keeps the cities unambiguous
+    // so we don't tangle with disambiguate_node.
     await input.fill(
       "Vol aller-retour Marseille → Toulouse, départ demain et retour dans 3 jours, 1 passager",
     );
     await input.press("Enter");
 
-    // First (outbound) option list arrives.
-    await expect(page.getByText(/Option 1/i).first()).toBeVisible({
-      timeout: 60_000,
-    });
+    // --- 1. Option cards arrive ---
+    // The option-list-header is rendered once by OptionList. Wait for it
+    // before making count assertions.
+    await expect(
+      page.getByTestId("option-list-header").first(),
+    ).toBeVisible({ timeout: 60_000 });
 
-    // Pick outbound. Round-trip routing: select_node detects we're at
-    // `awaiting_departure_selection` with a populated
-    // `search_offer_pool` and either filters to a single matching
-    // return (auto-resolve → extras gate) OR advances to
-    // `awaiting_return_selection` and surfaces the bundled return
-    // offers in a new option list.
+    // Exactly one option list has been rendered so far (the bundle list).
+    await expect(page.getByTestId("option-list-header")).toHaveCount(1);
+
+    // --- 2. Bundle cards show both legs ---
+    // OptionCard renders an "Aller · <date>" label row when return_leg is
+    // present (i18n key `legLabelOutbound` = "Aller" in FR) and a
+    // "Retour · <date>" row for the return slice. Assert at least the
+    // outbound label is visible on the first card.
+    await expect(
+      page.getByText(/^Aller\b/i).first(),
+    ).toBeVisible();
+
+    // Assert the return label is also visible (proves both legs rendered).
+    await expect(
+      page.getByText(/^Retour\b/i).first(),
+    ).toBeVisible();
+
+    // --- 3. Pick option 1 → extras prompt, NOT a second option list ---
     await input.fill("option 1");
     await input.press("Enter");
 
-    // Accept either downstream signal:
-    //   (a) second option list (`awaiting_return_selection`) —
-    //       matches /Option 1/ at a fresh location, OR
-    //   (b) extras prompt (auto-resolved return) — matches the same
-    //       lexical pattern used in select-strategies.spec.ts.
-    //
-    // We assert at LEAST one of the two patterns appears within the
-    // selection turn's latency budget. The regex below covers both:
-    //   - "Option 1" (any new option-card rendering)
-    //   - the extras-prompt vocabulary
-    //
-    // If round-trip routing is broken the graph would fall through
-    // to `_NO_MATCH_HINT` ("Hmm, je n'ai pas bien saisi...") and
-    // neither pattern would match — the test fails fast.
+    // The extras prompt must arrive. Match the standard vocabulary used
+    // across extras-apply.spec.ts.
     await expect(
       page
         .getByText(
-          /Option \d|autre chose|anything else|bagage|bag|luggage|valise|sac|extra|ajout|sièges|seat|priorité|retour|return/i,
+          /bagage|bag|luggage|valise|sac|extra|ajout|sièges|seat|priorité|autre chose|anything else/i,
         )
         .last(),
     ).toBeVisible({ timeout: 60_000 });
+
+    // The option-list-header count must STILL be 1 — no second option list
+    // was emitted for a "return selection" stage.
+    await expect(page.getByTestId("option-list-header")).toHaveCount(1);
+
+    // --- 4. Decline extras → booking confirmation with 2 legs ---
+    await input.fill("non");
+    await input.press("Enter");
+
+    // Wait for the booking confirmation card.
+    await expect(
+      page.getByTestId("booking-confirmation-card"),
+    ).toBeVisible({ timeout: 60_000 });
+
+    // A round-trip booking has exactly 2 legs (outbound + return).
+    await expect(page.getByTestId("booking-leg-row")).toHaveCount(2);
   });
 });

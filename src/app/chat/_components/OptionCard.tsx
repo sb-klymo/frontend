@@ -251,7 +251,9 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
           <span className="text-xs text-gray-500">
             {offer.policy_status === "policy_blocked"
               ? t.blockedReason
-              : offer.policy_reason}
+              : offer.policy_status === "manager_approval_required"
+                ? t.managerApprovalReason
+                : t.financeApprovalReason}
           </span>
         )}
       </div>
