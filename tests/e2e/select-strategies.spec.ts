@@ -38,7 +38,8 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-const TRIP_QUERY = "Vol Marseille → Toulouse demain, juste 1 passager, classe éco";
+const TRIP_QUERY =
+  "Vol Marseille → Toulouse demain, aller simple, juste 1 passager, classe éco";
 
 async function signupAndOpenOptions(page: Page, slug: string): Promise<void> {
   const email = `e2e-select-${slug}-${Date.now()}@klymo.local`;

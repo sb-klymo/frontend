@@ -38,7 +38,7 @@ test("Plan B happy path: chat → option pick → CheckoutPaymentCard with Strip
   // (avoids the "Paris a trois aéroports" branch which would force
   // an extra clarifying turn before reaching the option list).
   await input.fill(
-    "Vol Marseille → Toulouse demain, juste 1 passager, classe éco",
+    "Vol Marseille → Toulouse demain, aller simple, juste 1 passager, classe éco",
   );
   await input.press("Enter");
 
@@ -115,7 +115,7 @@ test("option-list header is rephrased contextually (no static i18n)", async ({
    * voici 3 vols :".
    */
   const { input } = await signupAndOnboard(page, { prefix: "humanize" });
-  await input.fill("Vol Marseille → Toulouse demain en éco");
+  await input.fill("Vol Marseille → Toulouse demain en éco, aller simple");
   await input.press("Enter");
 
   // Wait for the option list to render.

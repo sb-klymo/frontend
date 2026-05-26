@@ -35,7 +35,7 @@ const PSQL_ENV = { ...process.env, PGPASSWORD: "postgres" } as const;
 
 // Marseille→Toulouse, single-airport cities, no disambiguation step.
 // Under DUFFEL_MODE=stub returns 450/540/620 EUR (all > 100 EUR threshold).
-const TRIP_QUERY = "Vol Marseille → Toulouse demain, 1 passager";
+const TRIP_QUERY = "Vol Marseille → Toulouse demain, aller simple, 1 passager";
 
 // ---------------------------------------------------------------------------
 // Psql helper — executes a single SQL statement via execFileSync.

@@ -49,7 +49,8 @@ import type { Page } from "@playwright/test";
 // Under live_search_stub_order returns Duffel test inventory with
 // variable prices — that's why we use the `manager_only` preset
 // (300 EUR threshold), which catches almost anything > 300.
-const TRIP_QUERY = "Vol Marseille → Toulouse demain, 1 passager, classe éco";
+const TRIP_QUERY =
+  "Vol Marseille → Toulouse demain, aller simple, 1 passager, classe éco";
 
 async function signupAndOpenChat(page: Page, slug: string): Promise<void> {
   const email = `e2e-policy-${slug}-${Date.now()}@klymo.local`;

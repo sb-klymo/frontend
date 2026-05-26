@@ -48,7 +48,7 @@ test.describe("Phase 10b 5g — peu importe auto-pick", () => {
     const { input } = await signupAndOnboard(page, { prefix: "p10c-pi-fr" });
 
     // Paris is multi-airport (CDG/ORY/BVA) → triggers disambiguation.
-    await input.fill("Je veux partir de Paris pour Toulouse demain");
+    await input.fill("Je veux partir de Paris pour Toulouse demain, aller simple");
     await input.press("Enter");
     await waitForBotTurn(page);
 

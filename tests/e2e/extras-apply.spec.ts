@@ -64,7 +64,9 @@ test("pre-checkout extras prompt: user requests a bag before paying", async ({
   // 2. Send an unambiguous trip request — Marseille and Toulouse are
   //    single-airport cities so the agent goes directly to the option list
   //    without a disambiguation step.
-  await input.fill("Vol Marseille → Toulouse demain, juste 1 passager, classe éco");
+  await input.fill(
+    "Vol Marseille → Toulouse demain, aller simple, juste 1 passager, classe éco",
+  );
   await input.press("Enter");
 
   // 3. Wait for the option list. Stub Duffel returns 3 deterministic options.
@@ -155,7 +157,9 @@ test("post-booking extras-apply: user says oui ajoute le bagage", async ({
   const { input } = await signupAndOnboard(page, { prefix: "extras-oui" });
 
   // Drive to the option list.
-  await input.fill("Vol Marseille → Toulouse demain, juste 1 passager, classe éco");
+  await input.fill(
+    "Vol Marseille → Toulouse demain, aller simple, juste 1 passager, classe éco",
+  );
   await input.press("Enter");
   await expect(page.getByText(/Option 1/i).first()).toBeVisible({
     timeout: 30_000,

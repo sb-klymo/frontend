@@ -32,7 +32,7 @@ test.describe("Phase 10b 5e — booking-explicit footer wording", () => {
   }) => {
     const { input } = await signupAndOnboard(page, { prefix: "p10b-footer" });
 
-    await input.fill("Vol Marseille → Toulouse demain, 1 passager");
+    await input.fill("Vol Marseille → Toulouse demain, aller simple, 1 passager");
     await input.press("Enter");
 
     // Wait for the chat option list to render (scoped via testid so we

@@ -58,7 +58,8 @@ const PSQL_ENV = { ...process.env, PGPASSWORD: "postgres" } as const;
  * returns 3 deterministic offers at 450/540/620 EUR. With a €5 cap, all three
  * are policy_blocked.
  */
-const TRIP_QUERY = "Vol Marseille → Toulouse demain, 1 passager, classe éco";
+const TRIP_QUERY =
+  "Vol Marseille → Toulouse demain, aller simple, 1 passager, classe éco";
 
 // ---------------------------------------------------------------------------
 // Psql helper
