@@ -315,10 +315,13 @@ export function ChatWindow({
               onSubmit(e as unknown as React.FormEvent);
             }
           }}
-          placeholder={isAwaitingApproval ? "Waiting for manager approval…" : "Ask about a trip…"}
+          placeholder={
+            isAwaitingApproval
+              ? strings(language).chatInput.awaitingApprovalPlaceholder
+              : strings(language).chatInput.placeholder
+          }
           rows={1}
           disabled={inputDisabled}
-          aria-disabled={inputDisabled}
           className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none disabled:bg-gray-50"
         />
         {isStreaming ? (

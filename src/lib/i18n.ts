@@ -181,6 +181,12 @@ type Strings = {
     /** Notice shown by the chat input while a booking awaits approval */
     inputBlockedNotice: string;
   };
+  chatInput: {
+    /** Default textarea placeholder */
+    placeholder: string;
+    /** Placeholder while a booking awaits manager approval */
+    awaitingApprovalPlaceholder: string;
+  };
 };
 
 const EN: Strings = {
@@ -306,6 +312,10 @@ const EN: Strings = {
     canceledTitle: "Request withdrawn.",
     inputBlockedNotice:
       "Waiting for your manager's approval — you'll be notified as soon as they respond.",
+  },
+  chatInput: {
+    placeholder: "Ask about a trip…",
+    awaitingApprovalPlaceholder: "Waiting for manager approval…",
   },
   typingIndicator: {
     thinking: "Thinking…",
@@ -438,6 +448,10 @@ const FR: Strings = {
     canceledTitle: "Demande retirée.",
     inputBlockedNotice:
       "En attente de l'approbation de votre manager — vous serez notifié dès sa réponse.",
+  },
+  chatInput: {
+    placeholder: "Parlez-moi d'un voyage…",
+    awaitingApprovalPlaceholder: "En attente de l'approbation du manager…",
   },
   typingIndicator: {
     thinking: "Réflexion en cours…",
