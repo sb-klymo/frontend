@@ -62,6 +62,15 @@ export function ChatWindow({
   const setDraft = useChatStore((s) => s.setDraft);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Phase 13 — while a booking awaits manager approval the chat input is
+  // blocked (UX layer; the backend `approval_block` node also refuses
+  // messages server-side as the safety net). Re-enables automatically when
+  // the manager's decision lands: that flows through `resumeApproval` →
+  // a fresh SSE `done` event → `workflowStage` changes away from
+  // "awaiting_approval".
+  const isAwaitingApproval = workflowStage === "awaiting_approval";
+  const inputDisabled = isStreaming || isAwaitingApproval;
+
   // Auto-scroll to the latest message on every update.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -70,7 +79,7 @@ export function ChatWindow({
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = draft.trim();
-    if (!text || isStreaming) return;
+    if (!text || inputDisabled) return;
     setDraft("");
     void send(text);
   }
@@ -283,6 +292,16 @@ export function ChatWindow({
         </div>
       )}
 
+      {isAwaitingApproval && (
+        <div
+          data-testid="awaiting-approval-input-notice"
+          role="status"
+          className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+        >
+          {strings(language).approvalCard.inputBlockedNotice}
+        </div>
+      )}
+
       <form
         onSubmit={onSubmit}
         className="flex items-end gap-2 border-t border-gray-200 px-4 py-3"
@@ -296,9 +315,13 @@ export function ChatWindow({
               onSubmit(e as unknown as React.FormEvent);
             }
           }}
-          placeholder="Ask about a trip…"
+          placeholder={
+            isAwaitingApproval
+              ? strings(language).chatInput.awaitingApprovalPlaceholder
+              : strings(language).chatInput.placeholder
+          }
           rows={1}
-          disabled={isStreaming}
+          disabled={inputDisabled}
           className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none disabled:bg-gray-50"
         />
         {isStreaming ? (
@@ -312,7 +335,7 @@ export function ChatWindow({
         ) : (
           <button
             type="submit"
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || isAwaitingApproval}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             Send

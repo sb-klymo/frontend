@@ -5,8 +5,8 @@
  * sibling files and the Playwright suite.
  */
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApprovalRequestDetails, ChatMessage } from "@/hooks/useChatStream";
 
@@ -30,6 +30,8 @@ vi.mock("@/lib/supabase/browser", () => ({
     realtime: { setAuth: vi.fn() },
   }),
 }));
+
+import { useChatStore } from "@/stores/chatStore";
 
 import { ChatWindow } from "./ChatWindow";
 
@@ -489,5 +491,44 @@ describe("ChatWindow — approval request renders text + card together", () => {
 
     expect(screen.getByTestId("approval-pending-card")).toBeInTheDocument();
     expect(screen.queryByTestId("booking-confirmation-card")).toBeNull();
+  });
+});
+
+describe("ChatWindow — awaiting-approval input block (Phase 13)", () => {
+  afterEach(() => {
+    // The draft lives in the shared zustand store — reset it between tests.
+    // Wrapped in act() because a still-mounted ChatWindow subscribes to it.
+    act(() => {
+      useChatStore.setState({ draft: "" });
+    });
+  });
+
+  it("shows the notice and disables the textarea at awaiting_approval", () => {
+    _renderWindow({ workflowStage: "awaiting_approval", isStreaming: false });
+    expect(screen.getByTestId("awaiting-approval-input-notice")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeDisabled();
+  });
+
+  it("blocks Send even with text typed while awaiting_approval", () => {
+    useChatStore.setState({ draft: "actually, can I change the date?" });
+    _renderWindow({ workflowStage: "awaiting_approval", isStreaming: false });
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("does not block input or show the notice at other stages", () => {
+    _renderWindow({ workflowStage: "completed", isStreaming: false });
+    expect(screen.queryByTestId("awaiting-approval-input-notice")).toBeNull();
+    expect(screen.getByRole("textbox")).not.toBeDisabled();
+  });
+
+  it("renders the French notice when language is fr", () => {
+    _renderWindow({
+      workflowStage: "awaiting_approval",
+      isStreaming: false,
+      language: "fr",
+    });
+    expect(
+      screen.getByTestId("awaiting-approval-input-notice").textContent,
+    ).toContain("approbation de votre manager");
   });
 });
