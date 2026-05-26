@@ -41,6 +41,17 @@ export type PolicyStatus =
   | "finance_approval_required"
   | "policy_blocked";
 
+// Phase 12 — mirror of backend ConditionBadge (cancellation_badge.py).
+// `state` covers both refund and change conditions; `not_allowed` renders
+// as "non-refundable" / "non-changeable" per context.
+export type ConditionBadgeState = "free" | "fee" | "not_allowed" | "unknown";
+
+export type ConditionBadge = {
+  state: ConditionBadgeState;
+  penalty_amount_cents: number | null;
+  penalty_currency: string | null;
+};
+
 export type DisplayedOffer = {
   offer_id: string;
   rank: number; // 1-indexed (1, 2, or 3)
@@ -52,4 +63,8 @@ export type DisplayedOffer = {
   return_leg: FlightSlice | null;
   policy_status: PolicyStatus;
   policy_reason: string;
+  // Phase 12 — cancellation/change badges. Optional: a frontend deploy may
+  // briefly precede the backend, so an absent field is treated as "unknown".
+  refund_policy?: ConditionBadge;
+  change_policy?: ConditionBadge;
 };
