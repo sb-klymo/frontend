@@ -187,6 +187,20 @@ type Strings = {
     /** Placeholder while a booking awaits manager approval */
     awaitingApprovalPlaceholder: string;
   };
+  /**
+   * Static onboarding welcome bubbles, shown by the frontend on an empty
+   * chat while the user still has identity capture pending
+   * (`/me.passenger_profile_complete === false`). Phase 15b moved these
+   * out of the backend agent so they appear immediately on arrival,
+   * before the user types anything. Markdown (`**bold**`) is rendered
+   * the same way as assistant message bubbles.
+   */
+  onboardingWelcome: {
+    /** Greeting / "what Klymo does" intro. */
+    intro: string;
+    /** "These details can't be edited later" warning. */
+    warning: string;
+  };
 };
 
 const EN: Strings = {
@@ -316,6 +330,18 @@ const EN: Strings = {
   chatInput: {
     placeholder: "Ask about a trip…",
     awaitingApprovalPlaceholder: "Waiting for manager approval…",
+  },
+  onboardingWelcome: {
+    intro:
+      "👋 Welcome to **Klymo**. I'm your conversational business-travel concierge — " +
+      "flight search, company policy check, payment, ticket, even cancellation, " +
+      "all done right here in chat. No 12-step form, no dashboard, no back-and-forth. " +
+      "Just tell me where and when, and I'll handle the rest.",
+    warning:
+      "⚠️ **Heads up** — the details I'm about to ask for (first name, last name, " +
+      "date of birth, title, phone number) **can't be edited from the chat later**. " +
+      "Please double-check each answer before sending. If you spot a mistake later, " +
+      "reach out to Klymo support at **support@klymo.app** and we'll fix it together.",
   },
   typingIndicator: {
     thinking: "Thinking…",
@@ -452,6 +478,19 @@ const FR: Strings = {
   chatInput: {
     placeholder: "Parlez-moi d'un voyage…",
     awaitingApprovalPlaceholder: "En attente de l'approbation du manager…",
+  },
+  onboardingWelcome: {
+    intro:
+      "👋 Bienvenue chez **Klymo**. Je suis votre concierge voyage d'affaires " +
+      "conversationnel : recherche de vol, vérification de la politique entreprise, " +
+      "paiement, billet, et même annulation — tout se fait ici, en discutant. " +
+      "Pas de formulaire à 12 étapes, pas de tableau de bord, pas de retour-arrière " +
+      "interminable. Vous me dites où et quand, je m'occupe du reste.",
+    warning:
+      "⚠️ **Important** — les informations que je vais vous demander (prénom, nom, " +
+      "date de naissance, civilité, téléphone) **ne sont pas modifiables ensuite " +
+      "depuis le chat**. Vérifiez chaque réponse avant de l'envoyer. En cas d'erreur, " +
+      "contactez le support Klymo à **support@klymo.app** et on corrige ensemble.",
   },
   typingIndicator: {
     thinking: "Réflexion en cours…",

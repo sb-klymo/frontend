@@ -36,7 +36,16 @@ import { DevPanel } from "./DevPanel";
  * builds always show it (`DEV_BUILD === true`) so the flag is only
  * load-bearing for the deployed app.
  */
-export function ChatRoot({ isTeam = false }: { isTeam?: boolean }) {
+export function ChatRoot({
+  isTeam = false,
+  passengerProfileComplete = false,
+}: {
+  isTeam?: boolean;
+  /** Phase 15b — forwarded to ChatWindow to gate the static onboarding
+   * welcome bubbles on an empty chat. Server-derived from
+   * `/me.passenger_profile_complete` in the chat page. */
+  passengerProfileComplete?: boolean;
+}) {
   const [policyPreset, setPolicyPreset] = useState<PolicyPresetId>("none");
   const [voicePreset, setVoicePreset] = useState<VoicePresetId>("default");
   const stream = useChatStream({
@@ -81,6 +90,7 @@ export function ChatRoot({ isTeam = false }: { isTeam?: boolean }) {
         isStreaming={stream.isStreaming}
         isBubblePending={stream.isBubblePending}
         language={stream.language}
+        passengerProfileComplete={passengerProfileComplete}
         workflowStage={stream.workflowStage}
         send={stream.send}
         stop={stream.stop}

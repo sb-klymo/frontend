@@ -43,6 +43,7 @@ function _renderWindow(overrides: {
   isBubblePending?: boolean;
   messages?: ChatMessage[];
   language?: "en" | "fr";
+  passengerProfileComplete?: boolean;
 } = {}) {
   return render(
     <ChatWindow
@@ -51,6 +52,7 @@ function _renderWindow(overrides: {
       isStreaming={overrides.isStreaming ?? true}
       isBubblePending={overrides.isBubblePending ?? false}
       language={overrides.language ?? "en"}
+      passengerProfileComplete={overrides.passengerProfileComplete ?? false}
       workflowStage={overrides.workflowStage ?? null}
       send={_noop}
       stop={_noop}
@@ -144,6 +146,50 @@ describe("ChatWindow — TypingIndicator", () => {
     _renderWindow({ workflowStage: "ready_for_search" });
     const indicator = screen.getByRole("status");
     expect(indicator.getAttribute("aria-label")).toBe("Searching flights…");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 15b — static onboarding welcome on an empty chat
+// ---------------------------------------------------------------------------
+
+describe("ChatWindow — onboarding welcome (Phase 15b)", () => {
+  it("shows the welcome bubbles on an empty chat when profile is incomplete", () => {
+    _renderWindow({ messages: [], passengerProfileComplete: false, isStreaming: false });
+    const welcome = screen.getByTestId("onboarding-welcome");
+    expect(welcome).toBeInTheDocument();
+    expect(welcome.textContent).toContain("Klymo");
+    // The immutability warning + support email must be present.
+    expect(welcome.textContent).toContain("support@klymo.app");
+    // The generic empty-state hint must NOT show in its place.
+    expect(screen.queryByText("Start a conversation")).not.toBeInTheDocument();
+  });
+
+  it("localizes the welcome to French", () => {
+    _renderWindow({
+      messages: [],
+      passengerProfileComplete: false,
+      isStreaming: false,
+      language: "fr",
+    });
+    const welcome = screen.getByTestId("onboarding-welcome");
+    expect(welcome.textContent).toContain("Bienvenue chez");
+    expect(welcome.textContent).toContain("ne sont pas modifiables");
+  });
+
+  it("shows the generic empty state (no welcome) once the profile is complete", () => {
+    _renderWindow({ messages: [], passengerProfileComplete: true, isStreaming: false });
+    expect(screen.queryByTestId("onboarding-welcome")).not.toBeInTheDocument();
+    expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+  });
+
+  it("never shows the welcome once the conversation has messages", () => {
+    _renderWindow({
+      messages: [{ id: "m1", role: "user", content: "Salut" }],
+      passengerProfileComplete: false,
+      isStreaming: false,
+    });
+    expect(screen.queryByTestId("onboarding-welcome")).not.toBeInTheDocument();
   });
 });
 
