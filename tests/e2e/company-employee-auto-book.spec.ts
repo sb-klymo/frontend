@@ -102,12 +102,19 @@ test("company employee auto-books — no Checkout link, BookingConfirmationCard 
 
   // Link the user as employee with role=company_employee, account_type=company.
   // Also set first_name so the bot skips the name-collection step.
+  // Phase 14a — also seed last_name/title/gender/birthdate so the
+  // passenger-profile gate (chat/service.py:584-604) doesn't intercept the
+  // first message with `workflow_stage='onboarding_user_passenger'`.
   psql(`
     UPDATE public.users
        SET organization_id = '${orgId}',
            role = 'company_employee',
            account_type = 'company',
-           first_name = $$TestEmployee$$
+           first_name = $$TestEmployee$$,
+           last_name = $$Smith$$,
+           title = 'mr',
+           gender = 'm',
+           birthdate = '1990-01-01'
      WHERE id = '${userId}';
   `);
 
@@ -117,7 +124,7 @@ test("company employee auto-books — no Checkout link, BookingConfirmationCard 
 
   // Send a flight search. Use a route + threshold combination such that the
   // result is UNDER the manager threshold (4000€) so the offer auto-approves.
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
   await input.fill(TRIP_QUERY);
   await input.press("Enter");
   // Wait for the option list to render before sending the next message.

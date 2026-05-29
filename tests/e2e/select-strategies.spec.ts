@@ -49,7 +49,7 @@ async function signupAndOpenOptions(page: Page, slug: string): Promise<void> {
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/chat$/);
 
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
   await input.fill(TRIP_QUERY);
   await input.press("Enter");
 
@@ -64,7 +64,7 @@ async function sendSelectionAndExpectExtrasPrompt(
   page: Page,
   phrase: string,
 ): Promise<void> {
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
   await input.fill(phrase);
   await input.press("Enter");
 

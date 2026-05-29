@@ -88,11 +88,18 @@ async function signupUser(page: Page, prefix: string): Promise<string> {
 /**
  * Seed first_name + stripe_payment_method_id so the chat service
  * treats the user as fully onboarded (mirrors name-greeting.spec.ts).
+ * Phase 14a: also seed last_name/title/gender/birthdate so the
+ * passenger-profile gate (src/chat/service.py:584-604) doesn't
+ * intercept the first message.
  */
 function seedUserProfile(email: string): void {
   psql(
     `UPDATE public.users
        SET first_name = $$TestUser$$,
+           last_name = $$Smith$$,
+           title = 'mr',
+           gender = 'm',
+           birthdate = '1990-01-01',
            stripe_payment_method_id = 'pm_e2e_approval_test',
            account_type = 'individual'
      WHERE id = (SELECT id FROM auth.users WHERE email = $$${email}$$);`,
@@ -118,7 +125,7 @@ async function activatePolicyPreset(
 // ---------------------------------------------------------------------------
 
 async function sendMessage(page: Page, message: string): Promise<void> {
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
   await input.fill(message);
   await input.press("Enter");
 }

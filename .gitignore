@@ -45,3 +45,6 @@ Thumbs.db
 # Generated API client (regenerated via `npm run gen:api`)
 src/lib/api/generated/
 .vercel
+
+# Local-only worktrees (created by Claude Code superpowers)
+.claude/worktrees/

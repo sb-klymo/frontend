@@ -8,6 +8,13 @@
  * the trip-booking flow must seed first_name before sending the first
  * message.
  *
+ * Phase 14a (2026-05-28) added a SECOND gate after primary onboarding:
+ * src/chat/service.py:584-604 routes any user without a complete
+ * passenger profile (last_name + title + gender + birthdate) to
+ * workflow_stage='onboarding_user_passenger' before any trip flow can
+ * run. So we now seed those columns too — CHECK constraints accept
+ * the Duffel-wire enums (`title in mr/mrs/ms/miss/dr`, `gender in m/f`).
+ *
  * Two payment-mode flavours mirror what the agent routes on:
  *   - "checkout_fallback" (default) — no card on file → Plan B routing
  *   - "auto_charge"                  — saved card → inline auto-charge
@@ -73,9 +80,13 @@ export async function signupAndOnboard(
   psql(
     `UPDATE public.users
        SET first_name = $$TestUser$$,
+           last_name  = $$Smith$$,
+           title      = 'mr',
+           gender     = 'm',
+           birthdate  = '1990-01-01',
            account_type = 'individual'${paymentCols}
      WHERE id = (SELECT id FROM auth.users WHERE email = $$${email}$$);`,
   );
 
-  return { email, input: page.getByPlaceholder(/ask about a trip/i) };
+  return { email, input: page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i) };
 }
