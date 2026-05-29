@@ -135,12 +135,19 @@ test.describe("Phase 11 — Blocked offers as read-only cards", () => {
 
       // Set first_name so the chat service skips the onboarding name-collection
       // step (service.py:494-502 bypasses onboarding_personal_name when set).
+      // Phase 14a — also seed last_name/title/gender/birthdate so the
+      // passenger-profile gate (service.py:584-604) doesn't intercept the
+      // first message with `workflow_stage='onboarding_user_passenger'`.
       psql(`
         UPDATE public.users
            SET organization_id = '${orgId}',
                role             = 'company_employee',
                account_type     = 'company',
-               first_name       = $$TestBlockedEmployee$$
+               first_name       = $$TestBlockedEmployee$$,
+               last_name        = $$Smith$$,
+               title            = 'mr',
+               gender           = 'm',
+               birthdate        = '1990-01-01'
          WHERE id = '${userId}';
       `);
 
@@ -151,7 +158,7 @@ test.describe("Phase 11 — Blocked offers as read-only cards", () => {
       // -------------------------------------------------------------------
       // 3. Send flight search
       // -------------------------------------------------------------------
-      const input = page.getByPlaceholder(/ask about a trip/i);
+      const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
       await input.fill(TRIP_QUERY);
       await input.press("Enter");
 

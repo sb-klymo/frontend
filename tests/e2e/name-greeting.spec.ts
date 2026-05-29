@@ -38,8 +38,16 @@ function seedUserFirstName(email: string, firstName: string): void {
   // only. Email comes from a controlled `e2e-greet-*@klymo.local`
   // template so there's no untrusted-input surface, but using
   // execFileSync keeps us defensive regardless.
+  // Phase 14a added a second onboarding gate (passenger profile). Seed
+  // last_name/title/gender/birthdate too so users.id has a complete
+  // PassengerInfo and the chat service doesn't intercept the first
+  // message with `workflow_stage='onboarding_user_passenger'`.
   const sql = `UPDATE public.users
     SET first_name = $$${firstName}$$,
+        last_name = $$Smith$$,
+        title = 'mr',
+        gender = 'm',
+        birthdate = '1990-01-01',
         stripe_payment_method_id = 'pm_e2e_test_${Date.now()}',
         account_type = 'individual'
     WHERE id = (SELECT id FROM auth.users WHERE email = $$${email}$$);`;
@@ -85,7 +93,7 @@ async function signupAsHarold(page: Page, slug: string): Promise<string> {
 }
 
 async function sendAndAssertHarold(page: Page, message: string): Promise<void> {
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
   await input.fill(message);
   await input.press("Enter");
 

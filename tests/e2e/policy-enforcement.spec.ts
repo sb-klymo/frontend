@@ -77,7 +77,7 @@ async function activatePolicyPreset(
 }
 
 async function sendQuery(page: Page, query: string): Promise<void> {
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
   await input.fill(query);
   await input.press("Enter");
 }

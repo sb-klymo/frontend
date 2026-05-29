@@ -114,12 +114,19 @@ test("company employee approval-then-auto-charge — no Checkout link", async ({
   `);
 
   // Link employee to org; set first_name to skip name-collection step.
+  // Phase 14a — also seed last_name/title/gender/birthdate so the
+  // passenger-profile gate (chat/service.py:584-604) doesn't intercept the
+  // first message with `workflow_stage='onboarding_user_passenger'`.
   psql(`
     UPDATE public.users
        SET organization_id = '${orgId}',
            role = 'company_employee',
            account_type = 'company',
-           first_name = $$TestApprovedEmployee$$
+           first_name = $$TestApprovedEmployee$$,
+           last_name = $$Smith$$,
+           title = 'mr',
+           gender = 'm',
+           birthdate = '1990-01-01'
      WHERE id = '${employeeId}';
   `);
 
@@ -127,7 +134,7 @@ test("company employee approval-then-auto-charge — no Checkout link", async ({
   await page.reload();
   await page.waitForURL(/\/chat$/);
 
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
 
   // Trigger a flight search. With a 100€ threshold all stub offers (450-620€)
   // will be flagged for manager approval.

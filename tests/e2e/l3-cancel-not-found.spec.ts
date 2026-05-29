@@ -43,7 +43,7 @@ test("L3 cancel intent on a fresh user emits the not-found template", async ({
   // cancel-booking intent, route to cancel_booking_node, find no
   // booking_reference in state, and emit the not-found template
   // (rephrased through phrase() in production).
-  const input = page.getByPlaceholder(/ask about a trip/i);
+  const input = page.getByPlaceholder(/ask about a trip|parlez-moi d.un voyage/i);
   await input.fill("annule ma réservation");
   await input.press("Enter");
 
