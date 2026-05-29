@@ -27,6 +27,12 @@ export type ChatWindowProps = {
    * covers the gap BEFORE the first bubble of a turn. */
   isBubblePending?: boolean;
   language: SupportedLanguage;
+  /** Phase 15b — whether the user has already captured a complete Duffel
+   * passenger profile (`/me.passenger_profile_complete`). When false (the
+   * default — identity capture still pending), an empty chat shows the
+   * static onboarding welcome bubbles (intro + "not editable" warning)
+   * instead of the generic empty-state hint. */
+  passengerProfileComplete?: boolean;
   /** Latest known agent workflow stage, used to label the typing
    * indicator (e.g. "Searching flights…" vs the generic "Thinking…").
    * Null while the first turn is still in flight. */
@@ -52,6 +58,7 @@ export function ChatWindow({
   isStreaming,
   isBubblePending = false,
   language,
+  passengerProfileComplete = false,
   workflowStage,
   send,
   stop,
@@ -92,7 +99,16 @@ export function ChatWindow({
         aria-live="polite"
       >
         {messages.length === 0 ? (
-          <EmptyState />
+          // Phase 15b — on an empty chat, a user who still has identity
+          // capture pending sees the static onboarding welcome (intro +
+          // "not editable" warning) so the disclaimer appears BEFORE they
+          // send anything. Once the passenger profile is complete, fall
+          // back to the generic empty-state hint.
+          passengerProfileComplete ? (
+            <EmptyState />
+          ) : (
+            <OnboardingWelcome language={language} />
+          )
         ) : (
           messages.map((m) => {
             if (m.cancellation) {
@@ -355,6 +371,24 @@ function EmptyState() {
           Try: &ldquo;I want to fly from Paris to New York next Friday&rdquo;
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Phase 15b — static onboarding welcome shown on an empty chat while the
+ * user still has identity capture pending. Renders the intro + "details
+ * aren't editable" warning as assistant bubbles, so they look identical
+ * to a bot turn but appear immediately on arrival (no user message, no
+ * backend round-trip). Copy lives in `i18n.ts::onboardingWelcome`; the
+ * backend no longer emits these (Phase 15b backend half).
+ */
+function OnboardingWelcome({ language }: { language: SupportedLanguage }) {
+  const s = strings(language).onboardingWelcome;
+  return (
+    <div className="space-y-4" data-testid="onboarding-welcome">
+      <Bubble role="assistant" content={s.intro} streaming={false} />
+      <Bubble role="assistant" content={s.warning} streaming={false} />
     </div>
   );
 }

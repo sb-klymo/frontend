@@ -27,6 +27,11 @@ type Me = {
   is_team?: boolean;
   account_type?: "company" | "individual";
   organization_id?: string | null;
+  // Phase 15b — true once the user has a complete Duffel passenger
+  // profile. Drives whether the static onboarding welcome bubbles render
+  // on an empty chat. Absent / false → identity capture still pending →
+  // show the welcome.
+  passenger_profile_complete?: boolean;
 };
 
 async function fetchMe(accessToken: string): Promise<Me> {
@@ -86,7 +91,10 @@ export default async function ChatPage() {
           <LogoutButton />
         </div>
       </header>
-      <ChatRoot isTeam={isTeam} />
+      <ChatRoot
+        isTeam={isTeam}
+        passengerProfileComplete={me.passenger_profile_complete === true}
+      />
     </main>
   );
 }
