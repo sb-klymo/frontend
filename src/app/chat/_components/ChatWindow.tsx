@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, type ReactNode, useEffect, useRef } from "react";
 
 import type { ChatMessage } from "@/hooks/useChatStream";
 import { strings, type SupportedLanguage } from "@/lib/i18n";
@@ -98,17 +98,20 @@ export function ChatWindow({
         className="flex-1 space-y-4 overflow-y-auto px-4 py-6"
         aria-live="polite"
       >
+        {/* Phase 15b — the onboarding welcome (intro + "not editable"
+            warning) stays PINNED at the top for the whole first
+            conversation, not just the empty chat. `passengerProfileComplete`
+            is a server-rendered one-shot (see chat/page.tsx) so it never
+            flips mid-conversation — it only turns true on a later page load,
+            once the user has onboarded, at which point the welcome stops
+            showing. */}
+        {!passengerProfileComplete && <OnboardingWelcome language={language} />}
         {messages.length === 0 ? (
-          // Phase 15b — on an empty chat, a user who still has identity
-          // capture pending sees the static onboarding welcome (intro +
-          // "not editable" warning) so the disclaimer appears BEFORE they
-          // send anything. Once the passenger profile is complete, fall
-          // back to the generic empty-state hint.
+          // Empty chat: show the generic hint only once onboarded (the
+          // welcome above already covers the not-yet-onboarded case).
           passengerProfileComplete ? (
             <EmptyState />
-          ) : (
-            <OnboardingWelcome language={language} />
-          )
+          ) : null
         ) : (
           messages.map((m) => {
             if (m.cancellation) {
@@ -456,6 +459,23 @@ function TypingIndicator({
   );
 }
 
+/**
+ * Render inline `**bold**` markdown as <strong>, leaving the rest as plain
+ * text. Bot copy (backend + the static onboarding bubbles in i18n.ts) uses
+ * `**…**` for emphasis; without this the literal asterisks showed through.
+ * Deliberately minimal — bold only, no dependency — since that's the only
+ * inline markup our assistant copy uses. User text is rendered verbatim.
+ */
+function renderInline(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={i}>{part.slice(2, -2)}</strong>
+    ) : (
+      part
+    ),
+  );
+}
+
 function Bubble({
   role,
   content,
@@ -475,7 +495,7 @@ function Bubble({
             : "bg-gray-100 text-gray-900"
         }`}
       >
-        {content}
+        {isUser ? content : renderInline(content)}
         {streaming && <span className="ml-1 animate-pulse">▍</span>}
       </div>
     </div>
