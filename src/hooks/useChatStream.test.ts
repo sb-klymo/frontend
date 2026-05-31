@@ -101,6 +101,46 @@ describe("useChatStream", () => {
     expect(result.current.messages).toEqual([]);
   });
 
+  // Helper: temporarily override navigator.languages for the browser-language
+  // default tests, restoring the original descriptor afterwards.
+  function withNavigatorLanguages(langs: string[], fn: () => void) {
+    const original = Object.getOwnPropertyDescriptor(navigator, "languages");
+    Object.defineProperty(navigator, "languages", {
+      value: langs,
+      configurable: true,
+    });
+    try {
+      fn();
+    } finally {
+      if (original) {
+        Object.defineProperty(navigator, "languages", original);
+      } else {
+        Object.defineProperty(navigator, "languages", {
+          value: undefined,
+          configurable: true,
+        });
+      }
+    }
+  }
+
+  it("defaults the language to the browser language (fr) before any turn", () => {
+    withNavigatorLanguages(["fr-FR", "en"], () => {
+      const { result } = renderHook(() => useChatStream());
+      // No messages and no backend `detected_language` yet → the resolved
+      // language falls back to the browser/OS language. This is what the
+      // static onboarding welcome reads before the user sends anything.
+      expect(result.current.messages).toEqual([]);
+      expect(result.current.language).toBe("fr");
+    });
+  });
+
+  it("defaults the language to en when the browser is not French", () => {
+    withNavigatorLanguages(["en-US"], () => {
+      const { result } = renderHook(() => useChatStream());
+      expect(result.current.language).toBe("en");
+    });
+  });
+
   it("appends user message and streams assistant chunks", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       mockSseResponse([START_FRAME, MESSAGE_FRAME, DONE_FRAME]),

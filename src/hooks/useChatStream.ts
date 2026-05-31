@@ -11,7 +11,14 @@
  * Aborting mid-stream is supported via the returned `stop` callback.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { OrgPolicySettings } from "@/lib/api/generated/types.gen";
 import { useChatStore } from "@/stores/chatStore";
 import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
@@ -380,6 +387,21 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   // When set, takes precedence over the frontend's regex fallback —
   // single source of truth aligned with the bot's `phrase()` rephraser.
   const [backendLanguage, setBackendLanguage] = useState<SupportedLanguage | null>(null);
+  // Browser/OS language, used as the DEFAULT before the backend or a FR
+  // message decides (e.g. the static onboarding welcome, shown before any
+  // turn). `useSyncExternalStore` returns the "en" server snapshot during
+  // SSR and the real `navigator` value on the client — no hydration
+  // mismatch, no setState-in-effect. The value is static at runtime, so
+  // `subscribe` is a no-op. The backend's `detected_language` still wins
+  // once the user starts chatting.
+  const browserLanguage = useSyncExternalStore<SupportedLanguage>(
+    () => () => {},
+    () => {
+      const langs = navigator.languages ?? [navigator.language];
+      return langs.some((l) => l.toLowerCase().startsWith("fr")) ? "fr" : "en";
+    },
+    () => "en",
+  );
   // L3-suivi 2 (UI polish) — flips true on `event: typing` and back
   // to false on the next `event: message`. Used by ChatWindow to
   // render a typing indicator BETWEEN consecutive assistant bubbles
@@ -1570,7 +1592,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       (m) => m.role === "user" && detectLanguage(m.content) === "fr",
     )
       ? "fr"
-      : "en");
+      : browserLanguage);
 
   return {
     messages,
