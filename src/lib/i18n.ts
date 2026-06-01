@@ -333,15 +333,14 @@ const EN: Strings = {
   },
   onboardingWelcome: {
     intro:
-      "👋 Welcome to **Klymo**. I'm your conversational business-travel concierge — " +
-      "flight search, company policy check, payment, ticket, even cancellation, " +
-      "all done right here in chat. No 12-step form, no dashboard, no back-and-forth. " +
-      "Just tell me where and when, and I'll handle the rest.",
+      "Four tabs. One personal card. A receipt in the wrong format. That's not a " +
+      "booking process — that's your morning gone.\n\n" +
+      "Klymo handles your entire business trip from this conversation — flight found, " +
+      "hotel booked, card charged, invoice sent to finance before you put your phone down.\n\n" +
+      "This is the last trip you'll ever book manually.",
     warning:
-      "⚠️ **Heads up** — the details I'm about to ask for (first name, last name, " +
-      "date of birth, title, phone number) **can't be edited from the chat later**. " +
-      "Please double-check each answer before sending. If you spot a mistake later, " +
-      "reach out to Klymo support at **support@klymo.app** and we'll fix it together.",
+      "We'll need a few details to issue your tickets with the airlines. Double-check " +
+      "each answer before sending, as they can't be changed afterwards.",
   },
   typingIndicator: {
     thinking: "Thinking…",
@@ -481,16 +480,16 @@ const FR: Strings = {
   },
   onboardingWelcome: {
     intro:
-      "👋 Bienvenue chez **Klymo**. Je suis votre concierge voyage d'affaires " +
-      "conversationnel : recherche de vol, vérification de la politique entreprise, " +
-      "paiement, billet, et même annulation — tout se fait ici, en discutant. " +
-      "Pas de formulaire à 12 étapes, pas de tableau de bord, pas de retour-arrière " +
-      "interminable. Vous me dites où et quand, je m'occupe du reste.",
+      "Quatre onglets. Une carte personnelle. Un justificatif dans le mauvais format. " +
+      "Ce n'est pas un processus de réservation c'est votre matinée qui part.\n\n" +
+      "Klymo gère l'intégralité de votre voyage depuis cette conversation : vol trouvé, " +
+      "hôtel réservé, carte débitée, facture envoyée à vos finances avant que vous posiez " +
+      "votre téléphone.\n\n" +
+      "C'est votre dernier voyage réservé manuellement.",
     warning:
-      "⚠️ **Important** — les informations que je vais vous demander (prénom, nom, " +
-      "date de naissance, civilité, téléphone) **ne sont pas modifiables ensuite " +
-      "depuis le chat**. Vérifiez chaque réponse avant de l'envoyer. En cas d'erreur, " +
-      "contactez le support Klymo à **support@klymo.app** et on corrige ensemble.",
+      "On va vous demander quelques informations pour pouvoir émettre vos billets aux " +
+      "normes des compagnies aériennes. Vérifiez bien chaque réponse avant de l'envoyer, " +
+      "elles ne sont pas modifiables ensuite.",
   },
   typingIndicator: {
     thinking: "Réflexion en cours…",
