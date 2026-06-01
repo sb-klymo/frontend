@@ -1155,6 +1155,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             };
             if (next.status === "paid") {
               markCheckoutPaid(pendingTripId);
+              // Payment landed → leave payment_pending so the hard-block on the
+              // chat input lifts (the block is keyed on workflowStage==="payment_pending").
+              setWorkflowStage("completed");
             }
             // M2-bis Plan B hydration — when the post-Checkout chain
             // succeeds, the webhook handler writes `duffel_order_id`
@@ -1186,6 +1189,10 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               next.status === "canceled"
             ) {
               markBookingFailed(pendingTripId);
+              // Post-payment failure must also lift the hard-block so the
+              // user isn't stuck with a disabled input. Use a non-blocking
+              // conversational stage rather than "completed".
+              setWorkflowStage("pending_info");
             }
           },
         )

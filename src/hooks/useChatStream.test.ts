@@ -927,6 +927,59 @@ describe("useChatStream", () => {
     expect(mockRemoveChannel.mock.calls.length).toBe(removeChannelCallsBefore);
   });
 
+  it("lifts the payment_pending block to 'completed' when payment lands via Realtime", async () => {
+    // The chat input is hard-disabled while workflowStage==='payment_pending'.
+    // On the PAY path the stage only changes via this Realtime handler — the
+    // SSE `done` frame leaves it at 'payment_pending'. If the handler doesn't
+    // lift the stage, the input stays stuck disabled until a page reload.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-stage-paid" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    // Precondition: input is blocked (stage is payment_pending after `done`).
+    expect(result.current.workflowStage).toBe("payment_pending");
+
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "paid" } });
+    });
+
+    // Stage lifted → the hard-block on the chat input re-enables.
+    expect(result.current.workflowStage).toBe("completed");
+  });
+
+  it("lifts the payment_pending block to 'pending_info' on a post-payment terminal failure", async () => {
+    // A refund/failed/canceled after payment must also release the block so
+    // the user isn't stuck with a disabled input — using a non-blocking
+    // conversational stage rather than 'completed'.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-stage-failed" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    expect(result.current.workflowStage).toBe("payment_pending");
+
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "failed" } });
+    });
+
+    expect(result.current.workflowStage).toBe("pending_info");
+  });
+
   it("ignores non-terminal statuses on the Realtime channel", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       mockSseResponse([
