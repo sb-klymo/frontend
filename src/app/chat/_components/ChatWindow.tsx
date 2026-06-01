@@ -50,6 +50,9 @@ export type ChatWindowProps = {
    * 2026-05-22 hotfix). Optional: when undefined (or null conversationId
    * at mount), the card morph is still visual-only. */
   onApprovalDecided?: () => void;
+  /** Fires when the user clicks "Cancel booking" while a checkout is parked
+   * at payment_pending. Bound in ChatRoot to cancelCheckout(conversationId). */
+  onCancelCheckout?: () => void;
 };
 
 export function ChatWindow({
@@ -64,6 +67,7 @@ export function ChatWindow({
   stop,
   reset,
   onApprovalDecided,
+  onCancelCheckout,
 }: ChatWindowProps) {
   const draft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
@@ -76,7 +80,8 @@ export function ChatWindow({
   // a fresh SSE `done` event → `workflowStage` changes away from
   // "awaiting_approval".
   const isAwaitingApproval = workflowStage === "awaiting_approval";
-  const inputDisabled = isStreaming || isAwaitingApproval;
+  const isPaymentPending = workflowStage === "payment_pending";
+  const inputDisabled = isStreaming || isAwaitingApproval || isPaymentPending;
 
   // Auto-scroll to the latest message on every update.
   useEffect(() => {
@@ -321,6 +326,24 @@ export function ChatWindow({
         </div>
       )}
 
+      {isPaymentPending && (
+        <div
+          data-testid="payment-pending-input-notice"
+          role="status"
+          className="flex items-center justify-between gap-3 border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+        >
+          <span>{strings(language).checkoutCard.blockedNotice}</span>
+          <button
+            type="button"
+            data-testid="cancel-booking-button"
+            onClick={() => onCancelCheckout?.()}
+            className="shrink-0 rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+          >
+            {strings(language).checkoutCard.cancelBookingButton}
+          </button>
+        </div>
+      )}
+
       <form
         onSubmit={onSubmit}
         className="flex items-end gap-2 border-t border-gray-200 px-4 py-3"
@@ -337,7 +360,9 @@ export function ChatWindow({
           placeholder={
             isAwaitingApproval
               ? strings(language).chatInput.awaitingApprovalPlaceholder
-              : strings(language).chatInput.placeholder
+              : isPaymentPending
+                ? strings(language).chatInput.paymentPendingPlaceholder
+                : strings(language).chatInput.placeholder
           }
           rows={1}
           disabled={inputDisabled}
@@ -354,7 +379,7 @@ export function ChatWindow({
         ) : (
           <button
             type="submit"
-            disabled={!draft.trim() || isAwaitingApproval}
+            disabled={!draft.trim() || isAwaitingApproval || isPaymentPending}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             Send
