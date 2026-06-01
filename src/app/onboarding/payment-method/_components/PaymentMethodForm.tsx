@@ -38,8 +38,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { PaymentModeToggle } from "@/components/features/PaymentModeToggle";
 import { StripeCardSetup } from "@/components/features/StripeCardSetup";
 import { strings, type SupportedLanguage } from "@/lib/i18n";
-import { createSetupIntent, PaymentApiError } from "@/lib/api/payment";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import {
+  createSetupIntent,
+  PaymentApiError,
+  setPaymentPreference,
+} from "@/lib/api/payment";
 
 type Props = {
   initialAutoCharge: boolean;
@@ -90,13 +93,7 @@ export function PaymentMethodForm({
   });
 
   const persistPreference = useMutation({
-    mutationFn: async (next: boolean) => {
-      const supabase = createSupabaseBrowserClient();
-      const { error } = await supabase.auth.updateUser({
-        data: { auto_charge_enabled: next },
-      });
-      if (error) throw error;
-    },
+    mutationFn: (next: boolean) => setPaymentPreference(next),
   });
 
   async function handleStripeSuccess() {
