@@ -123,6 +123,8 @@ type Strings = {
     paidStatusLabel: string;
     paidStatusValue: string;
     paidNote: string;
+    blockedNotice: string;
+    cancelBookingButton: string;
   };
   paymentSuccess: {
     title: string;
@@ -186,6 +188,8 @@ type Strings = {
     placeholder: string;
     /** Placeholder while a booking awaits manager approval */
     awaitingApprovalPlaceholder: string;
+    /** Placeholder while a checkout booking is at payment_pending */
+    paymentPendingPlaceholder: string;
   };
   /**
    * Static onboarding welcome bubbles, shown by the frontend on an empty
@@ -271,6 +275,9 @@ const EN: Strings = {
     paidStatusValue: "Paid",
     paidNote:
       "We're finalizing your booking. The reference will land in your inbox shortly.",
+    blockedNotice:
+      "Your booking is waiting on payment — pay via the link above, or cancel it below.",
+    cancelBookingButton: "Cancel booking",
   },
   paymentSuccess: {
     title: "Payment received",
@@ -330,6 +337,7 @@ const EN: Strings = {
   chatInput: {
     placeholder: "Ask about a trip…",
     awaitingApprovalPlaceholder: "Waiting for manager approval…",
+    paymentPendingPlaceholder: "Finish payment via the link above…",
   },
   onboardingWelcome: {
     intro:
@@ -419,6 +427,9 @@ const FR: Strings = {
     paidStatusValue: "Payé",
     paidNote:
       "Nous finalisons votre réservation. La référence vous sera envoyée par email sous peu.",
+    blockedNotice:
+      "Votre réservation attend le paiement — payez via le lien ci-dessus, ou annulez-la ci-dessous.",
+    cancelBookingButton: "Annuler la réservation",
   },
   paymentSuccess: {
     title: "Paiement reçu",
@@ -477,6 +488,7 @@ const FR: Strings = {
   chatInput: {
     placeholder: "Parlez-moi d'un voyage…",
     awaitingApprovalPlaceholder: "En attente de l'approbation du manager…",
+    paymentPendingPlaceholder: "Finalisez le paiement via le lien ci-dessus…",
   },
   onboardingWelcome: {
     intro:
