@@ -967,6 +967,66 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   );
 
   /**
+   * Task 7 — cancel a parked checkout (payment_pending) and consume the
+   * resulting SSE stream so the conversation re-enables and the bot
+   * delivers a cancellation acknowledgement bubble.
+   *
+   * Thin sibling of resumeApproval — same SSE pipe, different endpoint.
+   */
+  const cancelCheckout = useCallback(
+    async (convId: string) => {
+      const controller = new AbortController();
+      try {
+        const response = await fetch("/api/chat/cancel-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: convId }),
+          signal: controller.signal,
+        });
+        if (response.status === 204) return;
+        if (!response.ok || !response.body) {
+          console.warn(`[cancelCheckout] backend returned ${response.status}`);
+          return;
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            const event = parseSseFrame(part);
+            if (!event) continue;
+            switch (event.type) {
+              case "message":
+                setIsBubblePending(false);
+                appendAssistantChunk(event.content, event.node, event.message_id);
+                break;
+              case "done":
+                if (event.conversation_id) setConversationId(event.conversation_id);
+                if (event.workflow_stage) setWorkflowStage(event.workflow_stage);
+                setIsBubblePending(false);
+                break;
+              case "error":
+                console.warn("[cancelCheckout] SSE error frame:", event.message);
+                setIsBubblePending(false);
+                break;
+              default:
+                break;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn("[cancelCheckout] error:", error);
+      }
+    },
+    [appendAssistantChunk, setConversationId],
+  );
+
+  /**
    * Task 14 — check /me/pending-approvals and auto-dispatch
    * /chat/resume-approval for any approval row that was decided while the
    * user was offline.
@@ -1605,6 +1665,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     resumeExtras,
     checkPendingApprovals,
     resumeApproval,
+    cancelCheckout,
     language,
     workflowStage,
   };

@@ -107,6 +107,13 @@ export function ChatRoot({
               }
             : undefined
         }
+        onCancelCheckout={
+          conversationId
+            ? () => {
+                void stream.cancelCheckout(conversationId);
+              }
+            : undefined
+        }
       />
     </div>
   );

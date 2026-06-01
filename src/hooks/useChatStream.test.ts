@@ -2000,3 +2000,65 @@ describe("useChatStream — company_onboarding_required redirect", () => {
     expect(window.location.assign).toHaveBeenCalledWith("/onboarding/company-profile");
   });
 });
+
+// =============================================================================
+// cancelCheckout — Task 7
+// =============================================================================
+
+describe("cancelCheckout", () => {
+  beforeEach(() => {
+    useChatStore.getState().resetConversation();
+    vi.restoreAllMocks();
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("POSTs to /api/chat/cancel-checkout and applies workflow_stage from done frame", async () => {
+    const MESSAGE_CANCEL =
+      'event: message\ndata: {"content":"Your booking has been cancelled.","node":"cancel_ack"}\n\n';
+    const DONE_CANCEL =
+      'event: done\ndata: {"conversation_id":"conv-cancel","workflow_stage":"pending_info"}\n\n';
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockSseResponse([MESSAGE_CANCEL, DONE_CANCEL]));
+
+    const { result } = renderHook(() => useChatStream());
+
+    // Seed a conversationId so the store is in a known state.
+    useChatStore.getState().setConversationId("conv-cancel");
+
+    await act(async () => {
+      await result.current.cancelCheckout("conv-cancel");
+    });
+
+    // 1. fetch was called with the correct endpoint and method.
+    const cancelCall = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/chat/cancel-checkout",
+    );
+    expect(cancelCall).toBeDefined();
+    const init = cancelCall![1] as RequestInit;
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string) as { conversation_id: string };
+    expect(body.conversation_id).toBe("conv-cancel");
+
+    // 2. workflowStage was updated to the value in the done frame.
+    await waitFor(() => {
+      expect(result.current.workflowStage).toBe("pending_info");
+    });
+  });
+});
