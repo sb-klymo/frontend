@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseAdminClient,
+  createSupabaseServerClient,
+} from "@/lib/supabase/server";
 
 import { PaymentMethodForm } from "./_components/PaymentMethodForm";
 
@@ -8,11 +11,11 @@ import { PaymentMethodForm } from "./_components/PaymentMethodForm";
  * Onboarding step — save a card and choose the payment mode.
  *
  * Server Component: gates the page on a valid Supabase session and reads
- * the existing `auto_charge_enabled` preference from `user_metadata` so
- * the toggle starts pre-filled if the user is editing an existing
- * choice. The actual SetupIntent is fetched client-side on mount —
- * SetupIntents are short-lived, so we don't want them stale-cached
- * inside server-rendered HTML if the user holds the page open.
+ * the user's existing `payment_mode` (single source of truth) so the
+ * toggle starts checked iff they previously chose auto-charge. The actual
+ * SetupIntent is fetched client-side on mount — SetupIntents are
+ * short-lived, so we don't want them stale-cached inside server-rendered
+ * HTML if the user holds the page open.
  *
  * Lives at `/onboarding/payment-method/` rather than under the spec'd
  * `(app)/onboarding/` route group because the existing pages
@@ -30,10 +33,21 @@ export default async function PaymentMethodPage() {
     redirect("/login");
   }
 
-  const initialAutoCharge =
-    typeof user.user_metadata?.auto_charge_enabled === "boolean"
-      ? user.user_metadata.auto_charge_enabled
-      : true;
+  // Single source of truth: public.users.payment_mode. The checkbox is
+  // checked iff the user previously chose auto-charge. A brand-new user
+  // (payment_mode='checkout_fallback') starts unchecked — no false promise.
+  let initialAutoCharge = false;
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("users")
+      .select("payment_mode")
+      .eq("id", user.id)
+      .single();
+    initialAutoCharge = data?.payment_mode === "auto_charge";
+  } catch {
+    initialAutoCharge = false;
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12">
