@@ -6,6 +6,7 @@ import {
 } from "@/lib/supabase/server";
 
 import { PaymentMethodForm } from "./_components/PaymentMethodForm";
+import { deriveInitialAutoCharge } from "./_lib/initialAutoCharge";
 
 /**
  * Onboarding step — save a card and choose the payment mode.
@@ -44,7 +45,7 @@ export default async function PaymentMethodPage() {
       .select("payment_mode")
       .eq("id", user.id)
       .single();
-    initialAutoCharge = data?.payment_mode === "auto_charge";
+    initialAutoCharge = deriveInitialAutoCharge(data?.payment_mode);
   } catch {
     initialAutoCharge = false;
   }

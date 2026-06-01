@@ -42,3 +42,10 @@ it("persists the auto-charge choice via the endpoint on card-save success", asyn
   fireEvent.click(saveBtn);
   await waitFor(() => expect(setPaymentPreference).toHaveBeenCalledWith(true));
 });
+
+it("persists auto_charge=false (opt-out) when the toggle starts off", async () => {
+  renderForm(false);
+  const saveBtn = await screen.findByText("mock-save-card");
+  fireEvent.click(saveBtn);
+  await waitFor(() => expect(setPaymentPreference).toHaveBeenCalledWith(false));
+});

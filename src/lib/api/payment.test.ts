@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createSetupIntent, PaymentApiError } from "./payment";
+import {
+  createSetupIntent,
+  PaymentApiError,
+  setPaymentPreference,
+} from "./payment";
 
 const fetchMock = vi.fn();
 
@@ -67,6 +71,57 @@ describe("createSetupIntent", () => {
     await expect(promise).rejects.toMatchObject({
       status: 500,
       code: "unknown_error",
+    });
+  });
+});
+
+describe("setPaymentPreference", () => {
+  it("PATCHes the BFF route with the auto_charge flag and returns the typed response", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ payment_mode: "auto_charge" }),
+    });
+
+    const result = await setPaymentPreference(true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/payment/preferences",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ auto_charge: true }),
+      }),
+    );
+    expect(result).toEqual({ payment_mode: "auto_charge" });
+  });
+
+  it("sends auto_charge=false for the opt-out path", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ payment_mode: "checkout_opt_in" }),
+    });
+
+    const result = await setPaymentPreference(false);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/payment/preferences",
+      expect.objectContaining({ body: JSON.stringify({ auto_charge: false }) }),
+    );
+    expect(result).toEqual({ payment_mode: "checkout_opt_in" });
+  });
+
+  it("throws PaymentApiError on a non-2xx response", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ code: "unauthorized", message: "Not signed in" }),
+    });
+
+    await expect(setPaymentPreference(true)).rejects.toMatchObject({
+      name: "PaymentApiError",
+      status: 401,
+      code: "unauthorized",
     });
   });
 });
