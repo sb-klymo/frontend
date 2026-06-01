@@ -159,11 +159,11 @@ describe("ChatWindow — onboarding welcome (Phase 15b)", () => {
     const welcome = screen.getByTestId("onboarding-welcome");
     expect(welcome).toBeInTheDocument();
     expect(welcome.textContent).toContain("Klymo");
-    // The immutability warning + support email must be present.
-    expect(welcome.textContent).toContain("support@klymo.app");
-    // `**bold**` markdown must be rendered, not shown as literal asterisks.
+    // Intro hook + the "details can't be changed" warning must be present.
+    expect(welcome.textContent).toContain("last trip you'll ever book manually");
+    expect(welcome.textContent).toContain("can't be changed afterwards");
+    // No literal markdown asterisks leak through.
     expect(welcome.textContent).not.toContain("**");
-    expect(welcome.querySelector("strong")).not.toBeNull();
     // The generic empty-state hint must NOT show in its place.
     expect(screen.queryByText("Start a conversation")).not.toBeInTheDocument();
   });
@@ -176,7 +176,7 @@ describe("ChatWindow — onboarding welcome (Phase 15b)", () => {
       language: "fr",
     });
     const welcome = screen.getByTestId("onboarding-welcome");
-    expect(welcome.textContent).toContain("Bienvenue chez");
+    expect(welcome.textContent).toContain("Quatre onglets");
     expect(welcome.textContent).toContain("ne sont pas modifiables");
   });
 
@@ -194,6 +194,9 @@ describe("ChatWindow — onboarding welcome (Phase 15b)", () => {
     expect(screen.getByTestId("onboarding-welcome")).toBeInTheDocument();
     // And the conversation still renders below it.
     expect(screen.getByText("bonjour")).toBeInTheDocument();
+    // `**bold**` in assistant copy renders as <strong> (renderInline), not
+    // literal asterisks — covered here now that the welcome copy is plain.
+    expect(screen.getByText("prénom").tagName).toBe("STRONG");
   });
 
   it("shows the generic empty state (no welcome) once the profile is complete", () => {
