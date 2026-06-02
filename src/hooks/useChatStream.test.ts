@@ -927,6 +927,59 @@ describe("useChatStream", () => {
     expect(mockRemoveChannel.mock.calls.length).toBe(removeChannelCallsBefore);
   });
 
+  it("lifts the payment_pending block to 'completed' when payment lands via Realtime", async () => {
+    // The chat input is hard-disabled while workflowStage==='payment_pending'.
+    // On the PAY path the stage only changes via this Realtime handler — the
+    // SSE `done` frame leaves it at 'payment_pending'. If the handler doesn't
+    // lift the stage, the input stays stuck disabled until a page reload.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-stage-paid" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    // Precondition: input is blocked (stage is payment_pending after `done`).
+    expect(result.current.workflowStage).toBe("payment_pending");
+
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "paid" } });
+    });
+
+    // Stage lifted → the hard-block on the chat input re-enables.
+    expect(result.current.workflowStage).toBe("completed");
+  });
+
+  it("lifts the payment_pending block to 'pending_info' on a post-payment terminal failure", async () => {
+    // A refund/failed/canceled after payment must also release the block so
+    // the user isn't stuck with a disabled input — using a non-blocking
+    // conversational stage rather than 'completed'.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        checkoutLinkFrame({ trip_id: "tr-stage-failed" }),
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"payment_pending"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("turn 1");
+    });
+    expect(result.current.workflowStage).toBe("payment_pending");
+
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { status: "failed" } });
+    });
+
+    expect(result.current.workflowStage).toBe("pending_info");
+  });
+
   it("ignores non-terminal statuses on the Realtime channel", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       mockSseResponse([
@@ -1998,5 +2051,67 @@ describe("useChatStream — company_onboarding_required redirect", () => {
     });
 
     expect(window.location.assign).toHaveBeenCalledWith("/onboarding/company-profile");
+  });
+});
+
+// =============================================================================
+// cancelCheckout — Task 7
+// =============================================================================
+
+describe("cancelCheckout", () => {
+  beforeEach(() => {
+    useChatStore.getState().resetConversation();
+    vi.restoreAllMocks();
+    lastPostgresChangesHandler = null;
+    mockOn.mockImplementation(
+      (_event: string, _config: unknown, handler: typeof lastPostgresChangesHandler) => {
+        lastPostgresChangesHandler = handler;
+        return { on: mockOn, subscribe: mockSubscribe };
+      },
+    );
+    mockSubscribe.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockChannel.mockReturnValue({ on: mockOn, subscribe: mockSubscribe });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token" } },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("POSTs to /api/chat/cancel-checkout and applies workflow_stage from done frame", async () => {
+    const MESSAGE_CANCEL =
+      'event: message\ndata: {"content":"Your booking has been cancelled.","node":"cancel_ack"}\n\n';
+    const DONE_CANCEL =
+      'event: done\ndata: {"conversation_id":"conv-cancel","workflow_stage":"pending_info"}\n\n';
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockSseResponse([MESSAGE_CANCEL, DONE_CANCEL]));
+
+    const { result } = renderHook(() => useChatStream());
+
+    // Seed a conversationId so the store is in a known state.
+    useChatStore.getState().setConversationId("conv-cancel");
+
+    await act(async () => {
+      await result.current.cancelCheckout("conv-cancel");
+    });
+
+    // 1. fetch was called with the correct endpoint and method.
+    const cancelCall = fetchSpy.mock.calls.find(
+      (c) => c[0] === "/api/chat/cancel-checkout",
+    );
+    expect(cancelCall).toBeDefined();
+    const init = cancelCall![1] as RequestInit;
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string) as { conversation_id: string };
+    expect(body.conversation_id).toBe("conv-cancel");
+
+    // 2. workflowStage was updated to the value in the done frame.
+    await waitFor(() => {
+      expect(result.current.workflowStage).toBe("pending_info");
+    });
   });
 });

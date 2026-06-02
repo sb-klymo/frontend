@@ -5,7 +5,7 @@
  * sibling files and the Playwright suite.
  */
 
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApprovalRequestDetails, ChatMessage } from "@/hooks/useChatStream";
@@ -44,6 +44,7 @@ function _renderWindow(overrides: {
   messages?: ChatMessage[];
   language?: "en" | "fr";
   passengerProfileComplete?: boolean;
+  onCancelCheckout?: () => void;
 } = {}) {
   return render(
     <ChatWindow
@@ -57,6 +58,7 @@ function _renderWindow(overrides: {
       send={_noop}
       stop={_noop}
       reset={_noop}
+      onCancelCheckout={overrides.onCancelCheckout}
     />,
   );
 }
@@ -598,5 +600,32 @@ describe("ChatWindow — awaiting-approval input block (Phase 13)", () => {
     expect(
       screen.getByTestId("awaiting-approval-input-notice").textContent,
     ).toContain("approbation de votre manager");
+  });
+});
+
+describe("ChatWindow — payment_pending input block (Task 6)", () => {
+  afterEach(() => {
+    act(() => {
+      useChatStore.setState({ draft: "" });
+    });
+  });
+
+  it("hard-disables input and shows the Cancel button during payment_pending", () => {
+    const onCancelCheckout = vi.fn();
+    _renderWindow({
+      messages: [], passengerProfileComplete: true, isStreaming: false,
+      workflowStage: "payment_pending", onCancelCheckout,
+    });
+    expect(screen.getByRole("textbox")).toBeDisabled();
+    expect(screen.getByTestId("payment-pending-input-notice")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("cancel-booking-button"));
+    expect(onCancelCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-enables input once the stage leaves payment_pending", () => {
+    _renderWindow({ messages: [], passengerProfileComplete: true, isStreaming: false,
+                    workflowStage: "pending_info" });
+    expect(screen.getByRole("textbox")).not.toBeDisabled();
+    expect(screen.queryByTestId("payment-pending-input-notice")).not.toBeInTheDocument();
   });
 });
