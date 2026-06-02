@@ -1294,6 +1294,66 @@ describe("useChatStream", () => {
     expect(last?.onboarding?.company_name).toBeNull();
   });
 
+  // PR-? — the onboarding Realtime resume effect must mount for BOTH
+  // the legacy `onboarding_payment_redirect` stage AND the new
+  // `onboarding_card_offer` stage (additive widening). When parked at
+  // either, the hook subscribes to `public.users` so a saved
+  // payment-method UPDATE can silently resume the turn. The thin
+  // session used by the other onboarding tests has no `user` field, so
+  // here we hydrate one (the effect bails on a missing user id).
+  it.each([
+    "onboarding_payment_redirect",
+    "onboarding_card_offer",
+  ])(
+    "subscribes to the onboarding resume channel when parked at %s",
+    async (stage) => {
+      // The shared mock factory infers the thin `{ access_token }`
+      // session shape; the resume effect additionally reads
+      // `session.user?.id`, so widen this one return with a cast.
+      mockGetSession.mockResolvedValue({
+        data: {
+          session: {
+            access_token: "test-jwt-token",
+            user: { id: "user-abc" },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof mockGetSession>>);
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: message\ndata: {"content":"Last step — add a payment method ↗","node":"onboard"}\n\n',
+          onboardingRedirectFrame(),
+          `event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"${stage}"}\n\n`,
+        ]),
+      );
+
+      const { result } = renderHook(() => useChatStream());
+      await act(async () => {
+        await result.current.send("keep it");
+      });
+
+      expect(result.current.workflowStage).toBe(stage);
+
+      // Auth hydrated before the channel is created, then the
+      // user-scoped Realtime subscription on `public.users` mounts.
+      await waitFor(() => {
+        expect(mockChannel).toHaveBeenCalledWith("onboarding-resume-user-abc");
+      });
+      expect(mockSetAuth).toHaveBeenCalledWith("test-jwt-token");
+      expect(mockOn).toHaveBeenCalledWith(
+        "postgres_changes",
+        expect.objectContaining({
+          event: "UPDATE",
+          schema: "public",
+          table: "users",
+          filter: "id=eq.user-abc",
+        }),
+        expect.any(Function),
+      );
+      expect(mockSubscribe).toHaveBeenCalled();
+    },
+  );
+
   it("ignores duffel_order_id morph when payload lacks it (M2 paid-only event)", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       mockSseResponse([

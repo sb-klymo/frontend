@@ -1547,7 +1547,11 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   // UPDATEs in a short window (e.g. a second webhook attempt).
   const resumedOnboardingForUserRef = useRef<string | null>(null);
   useEffect(() => {
-    if (workflowStage !== "onboarding_payment_redirect") return;
+    if (
+      workflowStage !== "onboarding_payment_redirect" &&
+      workflowStage !== "onboarding_card_offer"
+    )
+      return;
     const supabase = createSupabaseBrowserClient();
 
     let cancelled = false;
