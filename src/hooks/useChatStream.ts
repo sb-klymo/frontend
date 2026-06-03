@@ -1522,6 +1522,17 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     ],
   );
 
+  // Hold `send` in a ref so the onboarding Realtime effect below can call it
+  // without listing it as a dependency. `send` is recreated every turn (its
+  // deps include `isStreaming`, which toggles per turn), so depending on it
+  // would tear down + re-subscribe the channel on every turn for as long as a
+  // card is pending. Reading via the ref keeps the channel stable. Mirrors the
+  // `workflowStageRef` / `conversationIdRef` pattern above.
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+
   // PR-Polish phase-4 — auto-resume onboarding once the Stripe
   // SetupIntent webhook flips `users.stripe_payment_method_id`.
   //
@@ -1535,13 +1546,16 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   //
   // The subscription mirrors the M2-H3 pattern above (Realtime on
   // `public.transactions`) but on `public.users` instead, filtered
-  // by the authenticated user's id, and only mounted while the
-  // workflow is parked at the redirect stage. The "tick" is a
-  // silent send of a sentinel message that the backend's onboarding
-  // node treats as any other turn (the handler doesn't use message
-  // content — it polls the DB). After the turn, the workflow
-  // transitions to `draft` and the bot emits "Welcome aboard" as a
-  // normal AIMessage which streams into the chat.
+  // by the authenticated user's id, and mounted whenever an
+  // onboarding card is shown but not yet saved (see
+  // `hasPendingOnboardingCard` below) — regardless of workflow stage,
+  // so a card saved after the offer turn still morphs the widget. The
+  // resume *turn* (the silent sentinel send) stays gated to the
+  // offer/redirect stages. The "tick" is a silent send of a sentinel
+  // message that the backend's onboarding node treats as any other
+  // turn (the handler doesn't use message content — it polls the DB).
+  // After the turn, the workflow transitions to `draft` and the bot
+  // emits "Welcome aboard" as a normal AIMessage which streams in.
   //
   // Ref guard prevents double-firing if Realtime delivers multiple
   // UPDATEs in a short window (e.g. a second webhook attempt).
@@ -1608,7 +1622,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               workflowStageRef.current === "onboarding_payment_redirect" ||
               workflowStageRef.current === "onboarding_card_offer"
             ) {
-              void send("__klymo_onboarding_resume__", { silent: true });
+              void sendRef.current("__klymo_onboarding_resume__", {
+                silent: true,
+              });
             }
           },
         )
@@ -1623,7 +1639,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [hasPendingOnboardingCard, send, markOnboardingComplete]);
+  }, [hasPendingOnboardingCard, markOnboardingComplete]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
