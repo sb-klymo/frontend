@@ -1354,6 +1354,142 @@ describe("useChatStream", () => {
     },
   );
 
+  it("morphs the onboarding card on a LATE save (past the offer stage) WITHOUT a resume turn", async () => {
+    // User saw the offer, then moved on (declined + searched). Conversation is
+    // now at a non-onboarding stage. Saving a card later must morph the widget
+    // but NOT inject a resume turn into the active trip.
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token", user: { id: "user-abc" } } },
+    } as unknown as Awaited<ReturnType<typeof mockGetSession>>);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        'event: message\ndata: {"content":"Want to save a card? Or tell me where to fly.","node":"onboard"}\n\n',
+        onboardingRedirectFrame(),
+        // Ends at a NON-onboarding stage — the user has moved into the trip flow.
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"options_returned"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("non merci");
+    });
+    expect(result.current.workflowStage).toBe("options_returned");
+
+    // The card is pending (shown, not completed) → the subscription stays
+    // mounted regardless of stage → the postgres_changes handler is captured.
+    await waitFor(() => expect(lastPostgresChangesHandler).toBeTruthy());
+    const callsBefore = fetchSpy.mock.calls.length;
+
+    // Fire the card-saved Realtime UPDATE.
+    await act(async () => {
+      lastPostgresChangesHandler!({ new: { stripe_payment_method_id: "pm_saved_late" } });
+      await Promise.resolve();
+    });
+
+    // Morph happened — the card widget flips to its "saved" state.
+    expect(
+      result.current.messages.findLast((m) => m.onboarding)?.onboarding?.completed,
+    ).toBe(true);
+
+    // NO resume turn was injected (no new /api/chat POST carrying the sentinel).
+    const sentinelSent = fetchSpy.mock.calls
+      .slice(callsBefore)
+      .some(
+        ([url, init]) =>
+          url === "/api/chat" &&
+          String((init as RequestInit | undefined)?.body ?? "").includes(
+            "__klymo_onboarding_resume__",
+          ),
+      );
+    expect(sentinelSent).toBe(false);
+  });
+
+  // Both offer/redirect stages must fire morph + resume on save. The
+  // legacy `onboarding_payment_redirect` shares the same handler branch as
+  // the newer `onboarding_card_offer`; parameterizing guards against a
+  // future refactor dropping one stage from the condition.
+  it.each([
+    "onboarding_card_offer",
+    "onboarding_payment_redirect",
+  ])(
+    "morphs AND sends the resume turn when the card is saved AT %s (regression)",
+    async (stage) => {
+      mockGetSession.mockResolvedValue({
+        data: { session: { access_token: "test-jwt-token", user: { id: "user-abc" } } },
+      } as unknown as Awaited<ReturnType<typeof mockGetSession>>);
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          mockSseResponse([
+            START_FRAME,
+            'event: message\ndata: {"content":"Want to save a card?","node":"onboard"}\n\n',
+            onboardingRedirectFrame(),
+            `event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"${stage}"}\n\n`,
+          ]),
+        )
+        // The silent resume turn fires its own /api/chat POST.
+        .mockResolvedValueOnce(mockSseResponse([START_FRAME, DONE_FRAME]));
+
+      const { result } = renderHook(() => useChatStream());
+      await act(async () => {
+        await result.current.send("oui");
+      });
+      expect(result.current.workflowStage).toBe(stage);
+
+      await waitFor(() => expect(lastPostgresChangesHandler).toBeTruthy());
+      await act(async () => {
+        lastPostgresChangesHandler!({ new: { stripe_payment_method_id: "pm_x" } });
+        await Promise.resolve();
+      });
+
+      expect(
+        result.current.messages.findLast((m) => m.onboarding)?.onboarding?.completed,
+      ).toBe(true);
+      await waitFor(() =>
+        expect(fetchSpy).toHaveBeenCalledWith(
+          "/api/chat",
+          expect.objectContaining({
+            body: expect.stringContaining("__klymo_onboarding_resume__"),
+          }),
+        ),
+      );
+    },
+  );
+
+  it("does NOT mount the onboarding resume channel when no card is pending", async () => {
+    // A plain turn with no onboarding card. The mount gate
+    // (hasPendingOnboardingCard) must keep the `public.users` subscription
+    // closed — no morph, no resume — so we never hold an idle Realtime
+    // channel for users who were never offered a card.
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "test-jwt-token", user: { id: "user-abc" } } },
+    } as unknown as Awaited<ReturnType<typeof mockGetSession>>);
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      mockSseResponse([
+        START_FRAME,
+        'event: message\ndata: {"content":"Where would you like to fly?","node":"draft"}\n\n',
+        'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"draft"}\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(result.current.workflowStage).toBe("draft");
+
+    // No onboarding card was attached…
+    expect(result.current.messages.some((m) => m.onboarding)).toBe(false);
+    // …so the onboarding-resume channel was never created and no
+    // postgres_changes handler was registered for it.
+    expect(mockChannel).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^onboarding-resume-/),
+    );
+    expect(lastPostgresChangesHandler).toBeNull();
+  });
+
   it("ignores duffel_order_id morph when payload lacks it (M2 paid-only event)", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       mockSseResponse([
