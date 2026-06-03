@@ -1546,12 +1546,15 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
   // Ref guard prevents double-firing if Realtime delivers multiple
   // UPDATEs in a short window (e.g. a second webhook attempt).
   const resumedOnboardingForUserRef = useRef<string | null>(null);
+  // Mount the resume subscription whenever an onboarding card is shown-but-
+  // not-yet-saved — regardless of stage — so a card saved AFTER the offer
+  // turn (e.g. mid-trip-flow) still morphs the widget. The resume *turn*
+  // stays gated to the offer/redirect stages (below).
+  const hasPendingOnboardingCard = messages.some(
+    (m) => m.onboarding != null && !m.onboarding.completed,
+  );
   useEffect(() => {
-    if (
-      workflowStage !== "onboarding_payment_redirect" &&
-      workflowStage !== "onboarding_card_offer"
-    )
-      return;
+    if (!hasPendingOnboardingCard) return;
     const supabase = createSupabaseBrowserClient();
 
     let cancelled = false;
@@ -1593,16 +1596,20 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
             // duplicate the resume turn.
             if (resumedOnboardingForUserRef.current === userId) return;
             resumedOnboardingForUserRef.current = userId;
-            // Morph the existing OnboardingCard to its "saved" state
-            // BEFORE triggering the silent resume turn. Otherwise the
-            // card still reads "Add payment method" while the bot is
-            // streaming the welcome bubble — visually inconsistent.
+            // Always morph the card to its "saved" state (stage-agnostic) so a
+            // late save — e.g. after the user moved on to the trip flow — still
+            // updates the widget in history.
             markOnboardingComplete();
-            // Sentinel message — the onboarding-redirect handler
-            // ignores message content. `silent: true` skips the
-            // optimistic user-bubble append so the user only sees
-            // the bot's "Welcome aboard" reply land.
-            void send("__klymo_onboarding_resume__", { silent: true });
+            // Resume conversation turn ONLY at the offer/redirect stages —
+            // injecting it mid-trip-flow would derail an active conversation.
+            // Read the live stage via the ref so stage changes don't
+            // re-subscribe this effect.
+            if (
+              workflowStageRef.current === "onboarding_payment_redirect" ||
+              workflowStageRef.current === "onboarding_card_offer"
+            ) {
+              void send("__klymo_onboarding_resume__", { silent: true });
+            }
           },
         )
         .subscribe();
@@ -1616,7 +1623,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [workflowStage, send, markOnboardingComplete]);
+  }, [hasPendingOnboardingCard, send, markOnboardingComplete]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
