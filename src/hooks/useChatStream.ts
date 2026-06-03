@@ -21,7 +21,7 @@ import {
 } from "react";
 import type { OrgPolicySettings } from "@/lib/api/generated/types.gen";
 import { useChatStore } from "@/stores/chatStore";
-import { detectLanguage, type SupportedLanguage } from "@/lib/i18n";
+import type { SupportedLanguage } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { DisplayedOffer } from "@/types/chat";
 import type { Vibe } from "@/lib/voice-presets";
@@ -1253,6 +1253,10 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
           body: JSON.stringify({
             message: userText,
             conversation_id: conversationId,
+            // Browser-sourced answer language (Alt A). The backend seeds
+            // this into the agent state as `detected_language`; the bot
+            // never infers language from the message content.
+            language: browserLanguage,
             // Only included when set — keeps prod requests free of
             // dev-only fields, and the backend ignores it anyway when
             // settings.is_production is True.
@@ -1508,6 +1512,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     [
       endpoint,
       conversationId,
+      browserLanguage,
       isStreaming,
       setConversationId,
       setStreaming,
@@ -1662,31 +1667,17 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     useChatStore.getState().resetConversation();
   }, []);
 
-  // Resolved language with the backend as source of truth:
+  // Resolved language (browser-sourced model, Alt A):
   //   1. If the backend has surfaced `detected_language` via `event:
-  //      done`, use it. That's the same sticky value the bot's
-  //      `phrase()` rephraser used — single source of truth.
-  //   2. Otherwise (first turn before any done frame, or the backend
-  //      never set the value), fall back to a regex scan over the
-  //      whole conversation. Once FR is observed anywhere it stays.
-  //      This is a heuristic that drifts slightly from the backend
-  //      (the frontend regex may not catch every word the backend's
-  //      LLM-rephraser would) but it's the best we can do before the
-  //      first done frame arrives.
-  //
-  // Pre-fix bug (2026-05-19): only the most recent user message was
-  // scanned AND the regex missed common greetings ("bonjour"), so a
-  // user opening with "bonjour" → "Harold" rendered the
-  // OnboardingCard in English. Backend-sourced language closes the
-  // gap because the bot's own sticky-language decision is what we
-  // surface.
-  const language: SupportedLanguage =
-    backendLanguage ??
-    (messages.some(
-      (m) => m.role === "user" && detectLanguage(m.content) === "fr",
-    )
-      ? "fr"
-      : browserLanguage);
+  //      done`, use it. That's the same value the bot rendered in —
+  //      single source of truth once a turn has landed.
+  //   2. Otherwise (first turn before any done frame), use the browser
+  //      locale. It's exactly what we send the backend on every turn,
+  //      so the two ends never disagree.
+  // Message content is never scanned for language — it's a device
+  // setting, not a content guess. (Replaces the 2026-05-19 regex scan
+  // that mis-rendered openers like "bonjour".)
+  const language: SupportedLanguage = backendLanguage ?? browserLanguage;
 
   return {
     messages,

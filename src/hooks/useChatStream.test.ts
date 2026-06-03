@@ -141,6 +141,62 @@ describe("useChatStream", () => {
     });
   });
 
+  // Async variant of `withNavigatorLanguages` — the sync helper restores
+  // the descriptor in a synchronous `finally`, which would run before an
+  // awaited `send()` completes. Used by the request-body language tests.
+  async function withNavigatorLanguagesAsync(
+    langs: string[],
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    const original = Object.getOwnPropertyDescriptor(navigator, "languages");
+    Object.defineProperty(navigator, "languages", {
+      value: langs,
+      configurable: true,
+    });
+    try {
+      await fn();
+    } finally {
+      if (original) {
+        Object.defineProperty(navigator, "languages", original);
+      } else {
+        Object.defineProperty(navigator, "languages", {
+          value: undefined,
+          configurable: true,
+        });
+      }
+    }
+  }
+
+  it("sends the browser language (fr) in the request body", async () => {
+    await withNavigatorLanguagesAsync(["fr-FR", "en"], async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(mockSseResponse([START_FRAME, MESSAGE_FRAME, DONE_FRAME]));
+      const { result } = renderHook(() => useChatStream());
+      await act(async () => {
+        await result.current.send("bonjour");
+      });
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const body = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string);
+      expect(body.language).toBe("fr");
+    });
+  });
+
+  it("sends the browser language (en) in the request body", async () => {
+    await withNavigatorLanguagesAsync(["en-US"], async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(mockSseResponse([START_FRAME, MESSAGE_FRAME, DONE_FRAME]));
+      const { result } = renderHook(() => useChatStream());
+      await act(async () => {
+        await result.current.send("hello");
+      });
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const body = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string);
+      expect(body.language).toBe("en");
+    });
+  });
+
   it("appends user message and streams assistant chunks", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       mockSseResponse([START_FRAME, MESSAGE_FRAME, DONE_FRAME]),
