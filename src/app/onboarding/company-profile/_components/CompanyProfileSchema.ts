@@ -15,7 +15,7 @@ export const CompanyProfileSchema = z
     country: z.string().min(1).max(100),
     currency: WorkspaceCurrency,
     approval_mode: ApprovalMode,
-    policy_cap_amount_cents: z.number().int().nonnegative(),
+    policy_cap_amount_cents: z.number().int().positive(),
     manager_approval_threshold_cents: z.number().int().nonnegative().nullable(),
   })
   .superRefine((data, ctx) => {

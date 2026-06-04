@@ -9,7 +9,7 @@ const validBase = {
   country: "France",
   currency: "EUR" as const,
   approval_mode: "self_serve" as const,
-  policy_cap_amount_cents: 50000,
+  policy_cap_amount_cents: 500,
   manager_approval_threshold_cents: null,
 };
 
@@ -41,8 +41,8 @@ describe("CompanyProfileSchema", () => {
     const result = CompanyProfileSchema.safeParse({
       ...validBase,
       approval_mode: "manager_approval",
-      policy_cap_amount_cents: 50000,
-      manager_approval_threshold_cents: 60000,
+      policy_cap_amount_cents: 500,
+      manager_approval_threshold_cents: 600,
     });
     expect(result.success).toBe(false);
   });
@@ -51,8 +51,8 @@ describe("CompanyProfileSchema", () => {
     const result = CompanyProfileSchema.safeParse({
       ...validBase,
       approval_mode: "manager_approval",
-      policy_cap_amount_cents: 50000,
-      manager_approval_threshold_cents: 20000,
+      policy_cap_amount_cents: 500,
+      manager_approval_threshold_cents: 200,
     });
     expect(result.success).toBe(true);
   });
@@ -64,6 +64,11 @@ describe("CompanyProfileSchema", () => {
 
   it("rejects empty country", () => {
     const result = CompanyProfileSchema.safeParse({ ...validBase, country: "" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a zero cap", () => {
+    const result = CompanyProfileSchema.safeParse({ ...validBase, policy_cap_amount_cents: 0 });
     expect(result.success).toBe(false);
   });
 });
