@@ -47,6 +47,8 @@ export function CompanyProfileForm() {
   });
 
   const approvalMode = watch("approval_mode");
+  const currency = watch("currency");
+  const moneySymbol = currency === "USD" ? "$" : "€";
 
   function onValidationError(fieldErrors: typeof errors) {
     // Surface the first field-level error in the submit-error banner so
@@ -61,10 +63,24 @@ export function CompanyProfileForm() {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // The cap + threshold inputs collect MAJOR UNITS (e.g. 1000 = €1000)
+      // despite the `_cents` field names; the backend (CompanyProfileRequest)
+      // expects CENTS. Convert once here, at the boundary. Without this, "1000"
+      // was persisted as 1000 cents (€10) and the policy engine blocked every
+      // flight. Guarded by CompanyProfileForm.test.tsx (cap/threshold → cents).
+      const payload = {
+        ...values,
+        policy_cap_amount_cents: values.policy_cap_amount_cents * 100,
+        manager_approval_threshold_cents:
+          values.manager_approval_threshold_cents === null
+            ? null
+            : values.manager_approval_threshold_cents * 100,
+      };
+
       const res = await fetch("/api/onboarding/company-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
 
       if (res.status === 201) {
@@ -137,7 +153,7 @@ export function CompanyProfileForm() {
           </select>
         </Field>
         <Field
-          label="Cap per employee per flight"
+          label={`Cap per employee per flight (${moneySymbol})`}
           error={errors.policy_cap_amount_cents?.message}
         >
           <input
@@ -149,7 +165,7 @@ export function CompanyProfileForm() {
         </Field>
         {approvalMode === "manager_approval" && (
           <Field
-            label="Manager approval threshold"
+            label={`Manager approval threshold (${moneySymbol})`}
             error={errors.manager_approval_threshold_cents?.message}
           >
             <input

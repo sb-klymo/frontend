@@ -109,6 +109,11 @@ describe("CompanyProfileForm", () => {
       const sentBody = JSON.parse((fetchCall![1] as RequestInit).body as string) as Record<string, unknown>;
       // The v2 country field must be present in the POST body.
       expect(sentBody).toHaveProperty("country", "France");
+      // Regression: the cap input collects MAJOR UNITS; the wire is CENTS.
+      // "500" entered above must be sent as 50000 cents (€500), not 500 (€5).
+      expect(sentBody).toHaveProperty("policy_cap_amount_cents", 50000);
+      // self_serve (default) → threshold stays null.
+      expect(sentBody).toHaveProperty("manager_approval_threshold_cents", null);
       expect(sentBody).not.toHaveProperty("industry");
       expect(sentBody).not.toHaveProperty("website");
       expect(sentBody).not.toHaveProperty("employee_count");
@@ -122,6 +127,42 @@ describe("CompanyProfileForm", () => {
       expect(sentBody).not.toHaveProperty("transport_allowed");
       expect(sentBody).not.toHaveProperty("class_allowed");
       expect(sentBody).not.toHaveProperty("international_travel");
+    });
+
+    it("converts the manager-approval threshold units to cents", async () => {
+      global.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            org_id: "11111111-1111-1111-1111-111111111111",
+            stripe_setup_url: "/onboarding/payment-method",
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+      render(<CompanyProfileForm />);
+      fireEvent.change(screen.getByLabelText(/Company name/i), { target: { value: "Acme" } });
+      fireEvent.change(screen.getByLabelText(/Country/i), { target: { value: "France" } });
+      fireEvent.change(screen.getByLabelText(/Team size/i), { target: { value: "11-50" } });
+      fireEvent.change(screen.getByLabelText(/Billing email/i), { target: { value: "bills@acme.test" } });
+      fireEvent.change(screen.getByLabelText(/Primary office city/i), { target: { value: "Paris" } });
+      fireEvent.change(screen.getByLabelText(/Workspace currency/i), { target: { value: "EUR" } });
+      fireEvent.change(screen.getByLabelText(/Approval mode/i), { target: { value: "manager_approval" } });
+      await waitFor(() =>
+        expect(screen.getByLabelText(/Manager approval threshold/i)).toBeInTheDocument(),
+      );
+      fireEvent.change(screen.getByLabelText(/Cap per employee per flight/i), { target: { value: "1000" } });
+      fireEvent.change(screen.getByLabelText(/Manager approval threshold/i), { target: { value: "400" } });
+
+      fireEvent.click(screen.getByRole("button", { name: /Create company/i }));
+
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+      const sentBody = JSON.parse(
+        (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
+      ) as Record<string, unknown>;
+      expect(sentBody).toHaveProperty("policy_cap_amount_cents", 100000);
+      expect(sentBody).toHaveProperty("manager_approval_threshold_cents", 40000);
     });
   });
 
