@@ -66,4 +66,9 @@ describe("CompanyProfileSchema", () => {
     const result = CompanyProfileSchema.safeParse({ ...validBase, country: "" });
     expect(result.success).toBe(false);
   });
+
+  it("rejects a zero cap", () => {
+    const result = CompanyProfileSchema.safeParse({ ...validBase, policy_cap_amount_cents: 0 });
+    expect(result.success).toBe(false);
+  });
 });
