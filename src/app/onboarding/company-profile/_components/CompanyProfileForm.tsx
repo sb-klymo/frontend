@@ -67,7 +67,8 @@ export function CompanyProfileForm() {
       // despite the `_cents` field names; the backend (CompanyProfileRequest)
       // expects CENTS. Convert once here, at the boundary. Without this, "1000"
       // was persisted as 1000 cents (€10) and the policy engine blocked every
-      // flight. Guarded by CompanyProfileForm.test.tsx (cap/threshold → cents).
+      // flight. Guarded by the "submits ... on 201" and "converts the
+      // manager-approval threshold units to cents" tests in CompanyProfileForm.test.tsx.
       const payload = {
         ...values,
         policy_cap_amount_cents: values.policy_cap_amount_cents * 100,
@@ -160,7 +161,7 @@ export function CompanyProfileForm() {
             {...register("policy_cap_amount_cents", { valueAsNumber: true })}
             className={INPUT_CLASS}
             type="number"
-            min={0}
+            min={1}
           />
         </Field>
         {approvalMode === "manager_approval" && (

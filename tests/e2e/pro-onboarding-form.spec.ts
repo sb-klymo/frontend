@@ -116,7 +116,7 @@ test("Company signup lands on the form, not the chat", async ({ page }) => {
   await page.getByLabel(/Billing email/i).fill("bills@e2e.local");
   await page.getByLabel(/Primary office city/i).fill("Paris");
   await page.getByLabel(/Workspace currency/i).selectOption("EUR");
-  await page.getByLabel(/Cap per employee per flight/i).fill("50000");
+  await page.getByLabel(/Cap per employee per flight/i).fill("500");
   // Approval mode stays at its default (self_serve) — no interaction needed.
 
   await page.getByRole("button", { name: /Create company/i }).click();
