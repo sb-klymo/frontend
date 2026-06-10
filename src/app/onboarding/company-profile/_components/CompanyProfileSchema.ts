@@ -27,12 +27,12 @@ export const CompanyProfileSchema = z
           message: "Required when approval_mode is manager_approval",
         });
       } else if (
-        data.manager_approval_threshold_cents > data.policy_cap_amount_cents
+        data.manager_approval_threshold_cents >= data.policy_cap_amount_cents
       ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["manager_approval_threshold_cents"],
-          message: "Must be less than or equal to the policy cap",
+          message: "Must be strictly below the policy cap",
         });
       }
     } else if (data.manager_approval_threshold_cents !== null) {

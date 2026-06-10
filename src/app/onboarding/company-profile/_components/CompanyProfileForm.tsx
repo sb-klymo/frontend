@@ -9,7 +9,7 @@
  *
  * Conditional UX: the manager-threshold field only appears when
  * approval_mode='manager_approval'. The Zod schema enforces the
- * same rule server-side-style (threshold required and <= cap).
+ * same rule server-side-style (threshold required and strictly below cap).
  *
  * Locked fields (Plan, Billing mode, Transport/Class allowed,
  * International travel) are display-only — NOT registered with RHF
