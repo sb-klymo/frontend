@@ -47,6 +47,19 @@ describe("CompanyProfileSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects manager_approval when threshold equals cap", () => {
+    const result = CompanyProfileSchema.safeParse({
+      ...validBase,
+      approval_mode: "manager_approval",
+      policy_cap_amount_cents: 500,
+      manager_approval_threshold_cents: 500,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toMatch(/strictly below/i);
+    }
+  });
+
   it("accepts manager_approval when threshold is below cap", () => {
     const result = CompanyProfileSchema.safeParse({
       ...validBase,
