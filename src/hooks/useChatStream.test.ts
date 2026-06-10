@@ -374,6 +374,91 @@ describe("useChatStream", () => {
     expect(lastAssistant?.offers).toHaveLength(1);
   });
 
+  it("re-search turn (buffered): the options frame creates a fresh assistant bubble and no recap bubble (W2 primary path)", async () => {
+    // W2-options-single-render: the backend no longer emits the plain-text
+    // recap (`event: message`) when displayed_offers travel on
+    // `event: options`. On a re-search from the options-on-screen stage
+    // (awaiting_departure_selection -> bufferingTurnRef=true), the turn is
+    // options-only: attachOffers takes its fresh-bubble branch (the last
+    // message is the user tweak) and the done-flush finds every buffer
+    // empty — no duplicate recap bubble re-surfaces below the cards.
+    const optionsFrame =
+      "event: options\ndata: " +
+      JSON.stringify({
+        offers: [
+          {
+            offer_id: "off_research",
+            rank: 1,
+            airline_name: "Air Stub",
+            airline_iata: "AS",
+            total_amount_cents: 32000,
+            total_currency: "EUR",
+            outbound: {
+              origin_iata: "MRS",
+              destination_iata: "NCE",
+              departure_datetime: "2026-09-01T08:00:00+00:00",
+              arrival_datetime: "2026-09-01T09:00:00+00:00",
+              duration_iso: "PT1H",
+            },
+            return_leg: null,
+            policy_status: "auto_approved",
+            policy_reason: "Within cap.",
+          },
+        ],
+        node: "search_present",
+        selectable: true,
+        header: "Found 1 solid option:",
+        footer: "Reply with option 1 to pick.",
+      }) +
+      "\n\n";
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockSseResponse([
+          START_FRAME,
+          optionsFrame,
+          'event: done\ndata: {"conversation_id":"conv-1","workflow_stage":"awaiting_departure_selection"}\n\n',
+        ]),
+      );
+
+    const { result } = renderHook(() => useChatStream());
+    // Turn 1 — stage parks at awaiting_departure_selection (cards on screen).
+    await act(async () => {
+      await result.current.send("vol Marseille Nice");
+    });
+    expect(result.current.workflowStage).toBe("awaiting_departure_selection");
+
+    // Turn 2 — the user tweaks criteria instead of picking (buffered turn).
+    await act(async () => {
+      await result.current.send("actually make it cheaper");
+    });
+
+    const messages = result.current.messages;
+    const tweakIndex = messages.findIndex(
+      (m) => m.content === "actually make it cheaper",
+    );
+    expect(tweakIndex).toBeGreaterThan(-1);
+    const turnMessages = messages.slice(tweakIndex + 1);
+    // Exactly ONE assistant bubble for the whole turn: the fresh options
+    // bubble (attachOffers fresh-bubble branch, empty content). No
+    // buffered recap text flushes after it.
+    expect(turnMessages).toHaveLength(1);
+    const optionsBubble = turnMessages[0]!;
+    expect(optionsBubble.role).toBe("assistant");
+    expect(optionsBubble.content).toBe("");
+    expect(optionsBubble.offers).toHaveLength(1);
+    expect(optionsBubble.offers?.[0]?.offer_id).toBe("off_research");
+    expect(optionsBubble.optionsHeader).toBe("Found 1 solid option:");
+    expect(optionsBubble.optionsFooter).toBe("Reply with option 1 to pick.");
+    expect(optionsBubble.optionsSelectable).toBe(true);
+  });
+
   it("handles HTTP errors from the backend", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("server unreachable", { status: 500 }),

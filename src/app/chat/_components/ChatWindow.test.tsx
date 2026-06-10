@@ -629,3 +629,67 @@ describe("ChatWindow — payment_pending input block (Task 6)", () => {
     expect(screen.queryByTestId("payment-pending-input-notice")).not.toBeInTheDocument();
   });
 });
+describe("ChatWindow — fresh options bubble renders OptionList (W2 single render)", () => {
+  it("renders the option cards for an offers-only bubble (empty content) without a stray text bubble", () => {
+    // W2-options-single-render: post-backend-fix, a search turn emits
+    // `event: options` with NO preceding `event: message` — attachOffers
+    // always lands the offers on a FRESH assistant bubble with empty
+    // content. ChatWindow renders that bubble as the OptionList alone:
+    // header + cards, no empty gray text bubble above or below.
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", content: "actually make it cheaper" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "",
+        offers: [
+          {
+            offer_id: "off_research",
+            rank: 1,
+            airline_name: "Air Stub",
+            airline_iata: "AS",
+            total_amount_cents: 32000,
+            total_currency: "EUR",
+            outbound: {
+              origin_iata: "MRS",
+              destination_iata: "NCE",
+              departure_datetime: "2026-09-01T08:00:00+00:00",
+              arrival_datetime: "2026-09-01T09:00:00+00:00",
+              duration_iso: "PT1H",
+              segments: [],
+              stops_count: 0,
+              intermediate_airports: [],
+              layover_durations_iso: [],
+            },
+            return_leg: null,
+            policy_status: "auto_approved",
+            policy_reason: "Within cap.",
+          },
+        ],
+        optionsHeader: "Found 1 solid option:",
+        optionsFooter: "Reply with option 1 to pick.",
+        optionsSelectable: true,
+      },
+    ];
+    const { container } = _renderWindow({ messages, isStreaming: false });
+
+    // The OptionList renders with the rephrased header + footer that
+    // traveled on the options frame.
+    expect(screen.getByTestId("option-list-header").textContent).toBe(
+      "Found 1 solid option:",
+    );
+    expect(screen.getByTestId("option-list-footer").textContent).toContain(
+      "Reply with option 1 to pick.",
+    );
+    // The offer card itself renders (no crash, cards visible).
+    expect(screen.getByText("Air Stub")).toBeInTheDocument();
+    // And the empty-content message did NOT render an empty text
+    // bubble of its own: every gray bubble on screen carries real
+    // OptionList content (header/footer/card chrome), none is blank.
+    const grayBubbles = Array.from(container.querySelectorAll(".bg-gray-100"));
+    for (const bubble of grayBubbles) {
+      expect(bubble.textContent?.trim()).not.toBe("");
+    }
+  });
+});
+
