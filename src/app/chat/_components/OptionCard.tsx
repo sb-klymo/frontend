@@ -299,8 +299,23 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
             )}
           </div>
         </div>
-        <div className="text-lg font-semibold tabular-nums text-gray-900">
-          {formatPrice(offer.total_amount_cents, offer.total_currency)}
+        <div className="text-right">
+          <div className="text-lg font-semibold tabular-nums text-gray-900">
+            {formatPrice(offer.total_amount_cents, offer.total_currency)}
+          </div>
+          {/* Phase 18 - approximate workspace-currency hint, display-only.
+              Present only when the backend attached approx fields (offer
+              currency differs from the org cap currency). */}
+          {offer.approx_amount_cents != null &&
+            offer.approx_currency != null && (
+              <div
+                className="text-xs text-gray-500 tabular-nums"
+                data-testid="approx-price-hint"
+              >
+                {"≈ " +
+                  formatPrice(offer.approx_amount_cents, offer.approx_currency)}
+              </div>
+            )}
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
