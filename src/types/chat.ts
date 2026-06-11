@@ -67,4 +67,11 @@ export type DisplayedOffer = {
   // briefly precede the backend, so an absent field is treated as "unknown".
   refund_policy?: ConditionBadge;
   change_policy?: ConditionBadge;
+  // Phase 18 - display-only approximate conversion into the org
+  // cap/workspace currency. Absent/null when the offer currency already
+  // matches the cap currency or when the user has no org cap context
+  // (individuals). Checkout still charges total_amount_cents in
+  // total_currency - these fields never feed the charge path.
+  approx_amount_cents?: number | null;
+  approx_currency?: string | null;
 };

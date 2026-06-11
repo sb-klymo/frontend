@@ -634,3 +634,41 @@ describe("OptionCard refund badge (Phase 12)", () => {
     expect(screen.queryByText(/Cancellation fee/)).toBeNull();
   });
 });
+
+describe("OptionCard - Phase 18 approx FX hint", () => {
+  it("renders the secondary approx line when approx fields are present", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          total_amount_cents: 45_000,
+          total_currency: "USD",
+          approx_amount_cents: 40_909,
+          approx_currency: "EUR",
+        }}
+      />,
+    );
+    expect(screen.getByText("$450")).toBeInTheDocument();
+    expect(screen.getByTestId("approx-price-hint")).toHaveTextContent(
+      "≈ €409.09",
+    );
+  });
+
+  it("omits the approx line when approx fields are absent", () => {
+    render(<OptionCard offer={baseOffer} />);
+    expect(screen.queryByTestId("approx-price-hint")).toBeNull();
+  });
+
+  it("omits the approx line when approx fields are null", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          approx_amount_cents: null,
+          approx_currency: null,
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("approx-price-hint")).toBeNull();
+  });
+});
