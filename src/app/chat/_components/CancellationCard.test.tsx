@@ -80,3 +80,64 @@ describe("CancellationCard", () => {
     expect(amount).toContain("$");
   });
 });
+
+describe("CancellationCard - fee breakdown (Phase 18)", () => {
+  it("renders original + fee rows when a penalty was withheld", () => {
+    render(
+      <CancellationCard
+        cancellation={_cancellation({
+          currency: "USD",
+          amount_cents: 46_000,
+          penalty_amount_cents: 8_000,
+          original_amount_cents: 54_000,
+        })}
+        language="en"
+      />,
+    );
+
+    expect(screen.getByText("Cancellation fee")).toBeInTheDocument();
+    expect(screen.getByText("Original amount")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("cancellation-penalty-amount").textContent,
+    ).toContain("80.00");
+    expect(
+      screen.getByTestId("cancellation-original-amount").textContent,
+    ).toContain("540.00");
+  });
+
+  it("renders FR labels with the typographic apostrophe", () => {
+    render(
+      <CancellationCard
+        cancellation={_cancellation({
+          penalty_amount_cents: 8_000,
+          original_amount_cents: 54_000,
+        })}
+        language="fr"
+      />,
+    );
+
+    expect(screen.getByText("Frais d’annulation")).toBeInTheDocument();
+    expect(screen.getByText("Montant initial")).toBeInTheDocument();
+  });
+
+  it("hides both rows for a free cancellation (penalty 0)", () => {
+    render(
+      <CancellationCard
+        cancellation={_cancellation({
+          penalty_amount_cents: 0,
+          original_amount_cents: 45_000,
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId("cancellation-penalty-amount")).toBeNull();
+    expect(screen.queryByTestId("cancellation-original-amount")).toBeNull();
+  });
+
+  it("hides both rows on legacy payloads without the fields", () => {
+    render(<CancellationCard cancellation={_cancellation()} />);
+
+    expect(screen.queryByTestId("cancellation-penalty-amount")).toBeNull();
+    expect(screen.queryByTestId("cancellation-original-amount")).toBeNull();
+  });
+});

@@ -89,6 +89,51 @@ describe("useChatStream", () => {
     vi.restoreAllMocks();
   });
 
+  it("passes the cancellation fee breakdown through to the card payload", async () => {
+    // Phase 18 - event: cancellation may carry penalty/original cents;
+    // the dispatch must forward them so the CancellationCard renders
+    // the durable fee breakdown (client issue 10).
+    const cancellationFrame =
+      "event: cancellation\ndata: " +
+      JSON.stringify({
+        trip_id: "tr-abc",
+        booking_reference: "STUBXXXXX1",
+        refund_id: "re_1",
+        amount_cents: 46000,
+        currency: "USD",
+        penalty_amount_cents: 8000,
+        original_amount_cents: 54000,
+      }) +
+      "\n\n";
+    const messageFrame =
+      "event: message\ndata: " +
+      JSON.stringify({ content: "Annulation faite.", node: "cancel_booking" }) +
+      "\n\n";
+    const doneFrame =
+      "event: done\ndata: " +
+      JSON.stringify({ conversation_id: "conv-1", workflow_stage: "canceled" }) +
+      "\n\n";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      mockSseResponse([START_FRAME, messageFrame, cancellationFrame, doneFrame]),
+    );
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("annule ma réservation");
+    });
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    const last = result.current.messages[result.current.messages.length - 1]!;
+    expect(last.cancellation).toMatchObject({
+      booking_reference: "STUBXXXXX1",
+      amount_cents: 46000,
+      penalty_amount_cents: 8000,
+      original_amount_cents: 54000,
+    });
+  });
+
   it("sends nothing on empty text", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { result } = renderHook(() => useChatStream());

@@ -32,6 +32,11 @@ export function CancellationCard({
   language = "en",
 }: CancellationCardProps) {
   const t = strings(language).cancellationCard;
+  // Phase 18 - fee breakdown (client issue 10): only meaningful when a
+  // penalty was actually withheld. Null/undefined (legacy payloads,
+  // pre-Phase-12 audit rows) and 0 (free cancellation) hide the rows.
+  const penaltyCents = cancellation.penalty_amount_cents;
+  const showFeeBreakdown = typeof penaltyCents === "number" && penaltyCents > 0;
 
   return (
     <div
@@ -56,6 +61,32 @@ export function CancellationCard({
             {cancellation.booking_reference}
           </dd>
         </div>
+        {showFeeBreakdown && typeof cancellation.original_amount_cents === "number" ? (
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="shrink-0 text-gray-500">{t.originalAmountLabel}</dt>
+            <dd
+              className="truncate text-gray-700"
+              data-testid="cancellation-original-amount"
+            >
+              {formatAmount(
+                cancellation.original_amount_cents,
+                cancellation.currency,
+                language,
+              )}
+            </dd>
+          </div>
+        ) : null}
+        {showFeeBreakdown ? (
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="shrink-0 text-gray-500">{t.penaltyLabel}</dt>
+            <dd
+              className="truncate text-gray-700"
+              data-testid="cancellation-penalty-amount"
+            >
+              {formatAmount(penaltyCents ?? 0, cancellation.currency, language)}
+            </dd>
+          </div>
+        ) : null}
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 text-gray-500">{t.refundLabel}</dt>
           <dd
