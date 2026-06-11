@@ -82,6 +82,16 @@ export type CancellationDetails = {
   refund_id: string;
   amount_cents: number;
   currency: string;
+  /**
+   * Phase 18 - durable fee breakdown (client issue 10). Optional AND
+   * nullable: audit rows written before the breakdown project null,
+   * and older SSE payloads omit the fields entirely. The card renders
+   * the fee + original rows only when penalty_amount_cents is a
+   * positive number, so legacy payloads keep rendering exactly as
+   * before.
+   */
+  penalty_amount_cents?: number | null;
+  original_amount_cents?: number | null;
 };
 
 /**
@@ -291,6 +301,8 @@ type ServerEvent =
       refund_id: string;
       amount_cents: number;
       currency: string;
+      penalty_amount_cents?: number | null;
+      original_amount_cents?: number | null;
     }
   | {
       type: "approval_required";
@@ -1387,6 +1399,8 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   refund_id: event.refund_id,
                   amount_cents: event.amount_cents,
                   currency: event.currency,
+                  penalty_amount_cents: event.penalty_amount_cents,
+                  original_amount_cents: event.original_amount_cents,
                 });
                 break;
               case "approval_required":

@@ -77,6 +77,8 @@ type Strings = {
     title: string;
     bookingReferenceLabel: string;
     refundLabel: string;
+    originalAmountLabel: string;
+    penaltyLabel: string;
     refundIdLabel: string;
     receiptNote: string;
   };
@@ -231,6 +233,8 @@ const EN: Strings = {
     title: "Booking cancelled",
     bookingReferenceLabel: "Booking reference",
     refundLabel: "Refunded",
+    originalAmountLabel: "Original amount",
+    penaltyLabel: "Cancellation fee",
     refundIdLabel: "Refund ID",
     receiptNote: "The refund will land on your card in 5-10 business days.",
   },
@@ -382,6 +386,8 @@ const FR: Strings = {
     title: "Réservation annulée",
     bookingReferenceLabel: "Référence",
     refundLabel: "Remboursé",
+    originalAmountLabel: "Montant initial",
+    penaltyLabel: "Frais d’annulation",
     refundIdLabel: "ID remboursement",
     receiptNote: "Le remboursement apparaîtra sur votre carte sous 5-10 jours ouvrés.",
   },
