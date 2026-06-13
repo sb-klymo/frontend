@@ -635,40 +635,38 @@ describe("OptionCard refund badge (Phase 12)", () => {
   });
 });
 
-describe("OptionCard - Phase 18 approx FX hint", () => {
-  it("renders the secondary approx line when approx fields are present", () => {
+describe("OptionCard - Phase 18 multi-currency charge price", () => {
+  it("renders the pinned workspace charge, not the supplier amount", () => {
+    render(
+      <OptionCard
+        offer={{
+          ...baseOffer,
+          total_amount_cents: 62_000,
+          total_currency: "USD",
+          charge_amount_cents: 49_600,
+          charge_currency: "EUR",
+        }}
+      />,
+    );
+    expect(screen.getByText("€496")).toBeInTheDocument();
+    expect(screen.queryByText("$620")).toBeNull();
+  });
+
+  it("falls back to the supplier amount when charge fields are absent", () => {
     render(
       <OptionCard
         offer={{
           ...baseOffer,
           total_amount_cents: 45_000,
           total_currency: "USD",
-          approx_amount_cents: 40_909,
-          approx_currency: "EUR",
         }}
       />,
     );
     expect(screen.getByText("$450")).toBeInTheDocument();
-    expect(screen.getByTestId("approx-price-hint")).toHaveTextContent(
-      "≈ €409.09",
-    );
   });
 
-  it("omits the approx line when approx fields are absent", () => {
+  it("no longer renders the legacy approx hint", () => {
     render(<OptionCard offer={baseOffer} />);
-    expect(screen.queryByTestId("approx-price-hint")).toBeNull();
-  });
-
-  it("omits the approx line when approx fields are null", () => {
-    render(
-      <OptionCard
-        offer={{
-          ...baseOffer,
-          approx_amount_cents: null,
-          approx_currency: null,
-        }}
-      />,
-    );
     expect(screen.queryByTestId("approx-price-hint")).toBeNull();
   });
 });
