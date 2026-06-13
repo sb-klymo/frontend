@@ -300,22 +300,16 @@ export function OptionCard({ offer, language = "en" }: OptionCardProps) {
           </div>
         </div>
         <div className="text-right">
+          {/* Phase 18 multi-currency: render the pinned workspace CHARGE
+              (what the company is actually billed), not the supplier amount.
+              Falls back to the supplier total_* if the backend has not yet
+              attached charge_* (frontend-deploy-precedes-backend skew). */}
           <div className="text-lg font-semibold tabular-nums text-gray-900">
-            {formatPrice(offer.total_amount_cents, offer.total_currency)}
-          </div>
-          {/* Phase 18 - approximate workspace-currency hint, display-only.
-              Present only when the backend attached approx fields (offer
-              currency differs from the org cap currency). */}
-          {offer.approx_amount_cents != null &&
-            offer.approx_currency != null && (
-              <div
-                className="text-xs text-gray-500 tabular-nums"
-                data-testid="approx-price-hint"
-              >
-                {"≈ " +
-                  formatPrice(offer.approx_amount_cents, offer.approx_currency)}
-              </div>
+            {formatPrice(
+              offer.charge_amount_cents ?? offer.total_amount_cents,
+              offer.charge_currency ?? offer.total_currency,
             )}
+          </div>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">

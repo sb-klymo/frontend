@@ -57,6 +57,8 @@ export type DisplayedOffer = {
   rank: number; // 1-indexed (1, 2, or 3)
   airline_name: string;
   airline_iata: string;
+  // Supplier amount/currency (what the airline charges via Duffel). Kept for
+  // reference; NOT the price the company is billed in multi-currency.
   total_amount_cents: number;
   total_currency: string;
   outbound: FlightSlice;
@@ -67,11 +69,10 @@ export type DisplayedOffer = {
   // briefly precede the backend, so an absent field is treated as "unknown".
   refund_policy?: ConditionBadge;
   change_policy?: ConditionBadge;
-  // Phase 18 - display-only approximate conversion into the org
-  // cap/workspace currency. Absent/null when the offer currency already
-  // matches the cap currency or when the user has no org cap context
-  // (individuals). Checkout still charges total_amount_cents in
-  // total_currency - these fields never feed the charge path.
-  approx_amount_cents?: number | null;
-  approx_currency?: string | null;
+  // Phase 18 multi-currency — the pinned workspace charge (what the company
+  // actually pays, in its own currency). This is the price the card renders.
+  // Optional for frontend-deploy-precedes-backend skew: fall back to
+  // total_amount_cents/total_currency when absent.
+  charge_amount_cents?: number;
+  charge_currency?: string;
 };
