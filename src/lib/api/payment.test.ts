@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSetupIntent,
   PaymentApiError,
+  setOrgPaymentPolicy,
   setPaymentPreference,
 } from "./payment";
 
@@ -123,5 +124,21 @@ describe("setPaymentPreference", () => {
       status: 401,
       code: "unauthorized",
     });
+  });
+});
+
+describe("setOrgPaymentPolicy", () => {
+  it("PATCHes the org policy BFF route and returns the typed response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ auto_charge: false }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await setOrgPaymentPolicy(false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/organizations/payment-policy",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ auto_charge: false }) }),
+    );
+    expect(result).toEqual({ auto_charge: false });
   });
 });

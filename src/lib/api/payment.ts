@@ -67,3 +67,24 @@ export async function setPaymentPreference(
 
   return (await response.json()) as PaymentPreferenceResponse;
 }
+
+export async function setOrgPaymentPolicy(
+  autoCharge: boolean,
+): Promise<{ auto_charge: boolean }> {
+  const response = await fetch("/api/organizations/payment-policy", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ auto_charge: autoCharge }),
+  });
+  if (!response.ok) {
+    const detail = await response
+      .json()
+      .catch(() => ({ code: "unknown_error", message: `HTTP ${response.status}` }));
+    throw new PaymentApiError(
+      response.status,
+      detail.code ?? "unknown_error",
+      detail.message ?? `HTTP ${response.status}`,
+    );
+  }
+  return (await response.json()) as { auto_charge: boolean };
+}
