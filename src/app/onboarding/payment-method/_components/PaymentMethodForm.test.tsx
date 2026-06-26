@@ -8,6 +8,7 @@ import { PaymentMethodForm } from "./PaymentMethodForm";
 const setPaymentPreference = vi
   .fn()
   .mockResolvedValue({ payment_mode: "auto_charge" });
+const setOrgPaymentPolicy = vi.fn().mockResolvedValue({ auto_charge: true });
 vi.mock("@/lib/api/payment", () => ({
   createSetupIntent: vi.fn().mockResolvedValue({
     client_secret: "seti_secret",
@@ -15,6 +16,7 @@ vi.mock("@/lib/api/payment", () => ({
     setup_intent_id: "seti_stub_1",
   }),
   setPaymentPreference: (...a: unknown[]) => setPaymentPreference(...a),
+  setOrgPaymentPolicy: (...a: unknown[]) => setOrgPaymentPolicy(...a),
   PaymentApiError: class extends Error {},
 }));
 
@@ -25,16 +27,19 @@ vi.mock("@/components/features/StripeCardSetup", () => ({
   ),
 }));
 
-function renderForm(initialAutoCharge: boolean) {
+function renderForm(initialAutoCharge: boolean, scope?: "user" | "org") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <PaymentMethodForm initialAutoCharge={initialAutoCharge} language="en" />
+      <PaymentMethodForm initialAutoCharge={initialAutoCharge} language="en" scope={scope} />
     </QueryClientProvider>,
   );
 }
 
-afterEach(() => setPaymentPreference.mockClear());
+afterEach(() => {
+  setPaymentPreference.mockClear();
+  setOrgPaymentPolicy.mockClear();
+});
 
 it("persists the auto-charge choice via the endpoint on card-save success", async () => {
   renderForm(true);
@@ -48,4 +53,28 @@ it("persists auto_charge=false (opt-out) when the toggle starts off", async () =
   const saveBtn = await screen.findByText("mock-save-card");
   fireEvent.click(saveBtn);
   await waitFor(() => expect(setPaymentPreference).toHaveBeenCalledWith(false));
+});
+
+it("org scope: persists via setOrgPaymentPolicy and shows success on resolve", async () => {
+  setOrgPaymentPolicy.mockResolvedValueOnce({ auto_charge: true });
+  renderForm(true, "org");
+  const saveBtn = await screen.findByText("mock-save-card");
+  fireEvent.click(saveBtn);
+  await waitFor(() => expect(setOrgPaymentPolicy).toHaveBeenCalledWith(true));
+  await waitFor(() =>
+    expect(screen.getByTestId("card-setup-success")).toBeInTheDocument(),
+  );
+});
+
+it("org scope: a persistence failure blocks success and shows an error", async () => {
+  setOrgPaymentPolicy.mockRejectedValueOnce(new Error("network error"));
+  renderForm(true, "org");
+  const saveBtn = await screen.findByText("mock-save-card");
+  fireEvent.click(saveBtn);
+  await waitFor(() =>
+    expect(screen.queryByTestId("card-setup-success")).not.toBeInTheDocument(),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument(),
+  );
 });

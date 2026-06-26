@@ -34,19 +34,36 @@ export default async function PaymentMethodPage() {
     redirect("/login");
   }
 
-  // Single source of truth: public.users.payment_mode. The checkbox is
-  // checked iff the user previously chose auto-charge. A brand-new user
-  // (payment_mode='checkout_fallback') starts unchecked — no false promise.
+  // Determine scope + initial toggle state.
+  //   company_admin with an org → "org" scope, reads org policy.
+  //   everyone else → "user" scope, reads individual payment_mode.
+  let scope: "user" | "org" = "user";
   let initialAutoCharge = false;
   try {
     const admin = createSupabaseAdminClient();
-    const { data } = await admin
+    const { data: u } = await admin
       .from("users")
-      .select("payment_mode")
+      .select("payment_mode, role, account_type, organization_id")
       .eq("id", user.id)
       .single();
-    initialAutoCharge = deriveInitialAutoCharge(data?.payment_mode);
+    const isCompanyAdmin =
+      u?.account_type === "company" &&
+      u?.role === "company_admin" &&
+      Boolean(u?.organization_id);
+    if (isCompanyAdmin) {
+      scope = "org";
+      const { data: org } = await admin
+        .from("organizations")
+        .select("auto_charge_bookings")
+        .eq("id", u!.organization_id)
+        .single();
+      // Column default is true; a missing row falls back to true (matches DB).
+      initialAutoCharge = org?.auto_charge_bookings ?? true;
+    } else {
+      initialAutoCharge = deriveInitialAutoCharge(u?.payment_mode);
+    }
   } catch {
+    scope = "user";
     initialAutoCharge = false;
   }
 
@@ -61,7 +78,7 @@ export default async function PaymentMethodPage() {
           </p>
         </header>
 
-        <PaymentMethodForm initialAutoCharge={initialAutoCharge} />
+        <PaymentMethodForm initialAutoCharge={initialAutoCharge} scope={scope} />
       </div>
     </main>
   );

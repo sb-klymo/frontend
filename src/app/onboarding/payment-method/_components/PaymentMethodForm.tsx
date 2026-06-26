@@ -41,6 +41,7 @@ import { strings, type SupportedLanguage } from "@/lib/i18n";
 import {
   createSetupIntent,
   PaymentApiError,
+  setOrgPaymentPolicy,
   setPaymentPreference,
 } from "@/lib/api/payment";
 
@@ -52,6 +53,12 @@ type Props = {
    * `navigator` polyfilling.
    */
   language?: SupportedLanguage;
+  /**
+   * "org" → company_admin flow: persist via setOrgPaymentPolicy (awaited,
+   * blocks success on failure). "user" → individual best-effort path.
+   * Defaults to "user" to preserve existing behaviour.
+   */
+  scope?: "user" | "org";
 };
 
 /**
@@ -69,6 +76,7 @@ function detectBrowserLanguage(): SupportedLanguage {
 export function PaymentMethodForm({
   initialAutoCharge,
   language,
+  scope = "user",
 }: Props) {
   const lang = language ?? detectBrowserLanguage();
   const t = strings(lang).cardSetupSuccess;
@@ -76,6 +84,8 @@ export function PaymentMethodForm({
   // Drives the post-save inline success state. Replaces the previous
   // `router.push("/chat")` redirect — the chat lives in another tab.
   const [setupComplete, setSetupComplete] = useState(false);
+  // For org scope: a reliable persist error that blocks the success state.
+  const [persistError, setPersistError] = useState<string | null>(null);
 
   const setupIntentQuery = useQuery({
     queryKey: ["payment", "setup-intent"],
@@ -97,6 +107,22 @@ export function PaymentMethodForm({
   });
 
   async function handleStripeSuccess() {
+    if (scope === "org") {
+      // Company policy — must persist reliably. Block success on failure.
+      try {
+        await setOrgPaymentPolicy(autoCharge);
+      } catch {
+        setPersistError(
+          lang === "fr"
+            ? "Carte enregistrée, mais le réglage du paiement n'a pas pu être sauvegardé. Réessayez."
+            : "Card saved, but the payment setting could not be saved. Please retry.",
+        );
+        return; // do NOT mark complete
+      }
+      setSetupComplete(true);
+      return;
+    }
+    // Individual — best-effort (unchanged).
     try {
       await persistPreference.mutateAsync(autoCharge);
     } catch {
@@ -180,7 +206,22 @@ export function PaymentMethodForm({
 
   return (
     <div className="space-y-6">
-      <PaymentModeToggle value={autoCharge} onChange={setAutoCharge} />
+      {persistError && (
+        <div role="alert" className="space-y-2 rounded-md border border-red-200 bg-red-50 p-4">
+          <p className="text-sm text-red-700">{persistError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setPersistError(null);
+              void handleStripeSuccess();
+            }}
+            className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      <PaymentModeToggle value={autoCharge} onChange={setAutoCharge} scope={scope} />
       <StripeCardSetup
         clientSecret={client_secret}
         publishableKey={publishable_key}
