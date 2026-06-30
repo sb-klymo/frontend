@@ -20,9 +20,20 @@ type Props = {
   value: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
+  /** "org" → company-card copy; "user" (default) → individual copy. */
+  scope?: "user" | "org";
 };
 
-export function PaymentModeToggle({ value, onChange, disabled }: Props) {
+export function PaymentModeToggle({ value, onChange, disabled, scope = "user" }: Props) {
+  const title =
+    scope === "org"
+      ? "Auto-charge bookings to the company card"
+      : "Auto-charge bookings to this card";
+  const description =
+    scope === "org"
+      ? 'When on, Klymo charges the company card automatically when an employee confirms a booking. When off, the employee must click "Vérifier & payer" before the company card is charged.'
+      : "When on, Klymo charges this card automatically as soon as you confirm a booking in chat. When off, Klymo will send you a checkout link to pay for each booking.";
+
   return (
     <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
       <label className="flex cursor-pointer items-start gap-3">
@@ -35,12 +46,10 @@ export function PaymentModeToggle({ value, onChange, disabled }: Props) {
         />
         <span className="flex-1">
           <span className="block text-sm font-medium text-gray-900">
-            Auto-charge bookings to this card
+            {title}
           </span>
           <span className="mt-1 block text-xs text-gray-600">
-            When on, Klymo charges this card automatically as soon as you
-            confirm a booking in chat. When off, Klymo will send you a
-            checkout link to pay for each booking.
+            {description}
           </span>
         </span>
       </label>

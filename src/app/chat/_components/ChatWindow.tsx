@@ -12,6 +12,7 @@ import { CancellationCard } from "./CancellationCard";
 import { CheckoutPaymentCard } from "./CheckoutPaymentCard";
 import { OnboardingCard } from "./OnboardingCard";
 import { OptionList } from "./OptionList";
+import { PaymentConfirmationCard } from "./PaymentConfirmationCard";
 
 export type ChatWindowProps = {
   messages: ChatMessage[];
@@ -53,6 +54,10 @@ export type ChatWindowProps = {
   /** Fires when the user clicks "Cancel booking" while a checkout is parked
    * at payment_pending. Bound in ChatRoot to cancelCheckout(conversationId). */
   onCancelCheckout?: () => void;
+  /** Task 15 — fires when the user confirms or cancels the payment
+   * confirmation gate. Bound in ChatRoot to
+   * resumePaymentConfirmation(conversationId, decision). */
+  onPaymentDecision?: (decision: "confirmed" | "canceled") => void;
 };
 
 export function ChatWindow({
@@ -68,6 +73,7 @@ export function ChatWindow({
   reset,
   onApprovalDecided,
   onCancelCheckout,
+  onPaymentDecision,
 }: ChatWindowProps) {
   const draft = useChatStore((s) => s.draft);
   const setDraft = useChatStore((s) => s.setDraft);
@@ -81,7 +87,8 @@ export function ChatWindow({
   // "awaiting_approval".
   const isAwaitingApproval = workflowStage === "awaiting_approval";
   const isPaymentPending = workflowStage === "payment_pending";
-  const inputDisabled = isStreaming || isAwaitingApproval || isPaymentPending;
+  const isAwaitingPaymentConfirmation = workflowStage === "awaiting_payment_confirmation";
+  const inputDisabled = isStreaming || isAwaitingApproval || isPaymentPending || isAwaitingPaymentConfirmation;
 
   // Auto-scroll to the latest message on every update.
   useEffect(() => {
@@ -217,6 +224,23 @@ export function ChatWindow({
                     approval={m.approvalRequest}
                     language={language}
                     onDecided={onApprovalDecided}
+                  />
+                </Fragment>
+              );
+            }
+            if (m.paymentConfirmation) {
+              // Task 15 — payment confirmation gate. Renders AFTER the
+              // approvalRequest block and BEFORE booking so the gate
+              // card is the headline before the booking is confirmed.
+              // The user's confirm/cancel decision flows to
+              // onPaymentDecision → resumePaymentConfirmation.
+              return (
+                <Fragment key={m.id}>
+                  {m.content && <Bubble role="assistant" content={m.content} streaming={false} />}
+                  <PaymentConfirmationCard
+                    paymentConfirmation={m.paymentConfirmation}
+                    language={language}
+                    onDecision={(decision) => onPaymentDecision?.(decision)}
                   />
                 </Fragment>
               );
@@ -379,7 +403,7 @@ export function ChatWindow({
         ) : (
           <button
             type="submit"
-            disabled={!draft.trim() || isAwaitingApproval || isPaymentPending}
+            disabled={!draft.trim() || isAwaitingApproval || isPaymentPending || isAwaitingPaymentConfirmation}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             Send

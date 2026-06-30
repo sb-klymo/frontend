@@ -25,6 +25,7 @@ import type { SupportedLanguage } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { DisplayedOffer } from "@/types/chat";
 import type { Vibe } from "@/lib/voice-presets";
+import type { PaymentConfirmationDetails } from "@/app/chat/_components/PaymentConfirmationCard";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -266,6 +267,15 @@ export type ChatMessage = {
    */
   approvalRequest?: ApprovalRequestDetails;
   /**
+   * Payment confirmation gate — surfaced via `event: payment_confirmation`
+   * SSE frame (Task 15). Emitted when the workflow parks at
+   * `workflow_stage='awaiting_payment_confirmation'` before auto-charging
+   * the company card. The frontend renders a `PaymentConfirmationCard`
+   * with confirm/cancel buttons; the user's decision flows through
+   * `resumePaymentConfirmation` → `POST /api/chat/resume-payment-confirmation`.
+   */
+  paymentConfirmation?: PaymentConfirmationDetails;
+  /**
    * Backend-assigned bubble identity from the SSE `event: message`
    * payload (`message_id`). For token-streaming chunks from a single
    * LLM call, all deltas share the same id → we APPEND to this
@@ -317,6 +327,7 @@ type ServerEvent =
       decided_at?: string | null;
       decided_by_first_name?: string | null;
     }
+  | { type: "payment_confirmation"; trip_id: string; amount_cents: number; currency: string }
   | {
       type: "done";
       workflow_stage: string | null;
@@ -754,6 +765,27 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     [],
   );
 
+  // Task 15 — attach the PaymentConfirmationCard to the last assistant
+  // message when `event: payment_confirmation` arrives. Mirrors the
+  // `attachApprovalRequest` sibling: same-turn text bubble is augmented
+  // in place; if no prior assistant message exists a card-only message
+  // is created.
+  const attachPaymentConfirmation = useCallback(
+    (paymentConfirmation: PaymentConfirmationDetails) => {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant") {
+          return [...prev.slice(0, -1), { ...last, paymentConfirmation }];
+        }
+        return [
+          ...prev,
+          { id: randomId(), role: "assistant", content: "", paymentConfirmation },
+        ];
+      });
+    },
+    [],
+  );
+
   // Realtime morph for the OnboardingCard — pairs with `markCheckoutPaid`
   // (M2-H3) but on the onboarding flow. Walks `messages` backwards to
   // find the most recent message carrying an `OnboardingDetails`
@@ -1036,6 +1068,106 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       }
     },
     [appendAssistantChunk, setConversationId],
+  );
+
+  /**
+   * Task 15 — re-enter the graph after the user confirms or cancels the
+   * payment confirmation gate (`awaiting_payment_confirmation` stage).
+   *
+   * POSTs `{ conversation_id, decision }` to the BFF route which proxies
+   * to `POST /chat/resume-payment-confirmation` on the backend. Consumes
+   * the resulting SSE stream (message / booking / done frames) using the
+   * same helpers as `resumeApproval` — including `attachBooking` for the
+   * K1 `booking` event emitted on confirm.
+   */
+  const resumePaymentConfirmation = useCallback(
+    async (convId: string, decision: "confirmed" | "canceled") => {
+      const controller = new AbortController();
+
+      try {
+        const response = await fetch("/api/chat/resume-payment-confirmation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: convId, decision }),
+          signal: controller.signal,
+        });
+
+        if (response.status === 204) {
+          return;
+        }
+
+        if (!response.ok || !response.body) {
+          console.warn(`[resumePaymentConfirmation] backend returned ${response.status}`);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let currentConversationId: string | null = convId;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            const event = parseSseFrame(part);
+            if (!event) continue;
+            switch (event.type) {
+              case "start":
+                setConversationId(event.conversation_id);
+                currentConversationId = event.conversation_id;
+                break;
+              case "message":
+                setIsBubblePending(false);
+                appendAssistantChunk(event.content, event.node, event.message_id);
+                break;
+              case "typing":
+                setIsBubblePending(true);
+                break;
+              case "booking":
+                attachBooking({
+                  trip_id: event.trip_id,
+                  booking_reference: event.booking_reference,
+                  passenger_name: event.passenger_name,
+                  amount_cents: event.amount_cents,
+                  currency: event.currency,
+                  legs: event.legs,
+                  total_duration_minutes: event.total_duration_minutes,
+                });
+                if (currentConversationId) {
+                  const convIdAtBooking = currentConversationId;
+                  setTimeout(() => {
+                    void resumeExtras(convIdAtBooking);
+                  }, 300);
+                }
+                break;
+              case "done":
+                setConversationId(event.conversation_id);
+                if (event.workflow_stage) {
+                  setWorkflowStage(event.workflow_stage);
+                }
+                if (event.detected_language === "fr" || event.detected_language === "en") {
+                  setBackendLanguage(event.detected_language);
+                }
+                setIsBubblePending(false);
+                break;
+              case "error":
+                console.warn("[resumePaymentConfirmation] SSE error frame:", event.message);
+                setIsBubblePending(false);
+                break;
+              default:
+                break;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn("[resumePaymentConfirmation] error:", error);
+      }
+    },
+    [appendAssistantChunk, attachBooking, setConversationId, resumeExtras],
   );
 
   /**
@@ -1353,6 +1485,13 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                   event.selectable,
                 );
                 break;
+              case "payment_confirmation":
+                attachPaymentConfirmation({
+                  trip_id: event.trip_id,
+                  amount_cents: event.amount_cents,
+                  currency: event.currency,
+                });
+                break;
               case "booking":
                 attachBooking({
                   trip_id: event.trip_id,
@@ -1537,6 +1676,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       attachCancellation,
       attachOnboarding,
       attachApprovalRequest,
+      attachPaymentConfirmation,
       resumeExtras,
     ],
   );
@@ -1705,6 +1845,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     checkPendingApprovals,
     resumeApproval,
     cancelCheckout,
+    resumePaymentConfirmation,
     language,
     workflowStage,
   };

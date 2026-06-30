@@ -114,6 +114,13 @@ export function ChatRoot({
               }
             : undefined
         }
+        onPaymentDecision={
+          conversationId
+            ? (decision) => {
+                void stream.resumePaymentConfirmation(conversationId, decision);
+              }
+            : undefined
+        }
       />
     </div>
   );
